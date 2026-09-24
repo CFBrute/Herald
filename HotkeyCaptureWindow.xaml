@@ -1,0 +1,17 @@
+<Window x:Class="Herald.HotkeyCaptureWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set hotkey" Height="160" Width="380"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        KeyDown="Window_KeyDown" Focusable="True">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0"
+                   Text="Press the new key combination. Must include Ctrl, Alt, Shift, or Win. Esc to cancel."
+                   TextWrapping="Wrap" VerticalAlignment="Center"/>
+        <TextBlock Grid.Row="1" x:Name="StatusText" FontWeight="Bold" Margin="0,10,0,0" TextWrapping="Wrap"/>
+    </Grid>
+</Window>

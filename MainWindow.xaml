@@ -1,0 +1,199 @@
+<Window x:Class="Herald.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Herald" Height="600" Width="720">
+    <Window.Resources>
+        <Style x:Key="LanguageBadge" TargetType="TextBlock">
+            <Setter Property="Text" Value="{Binding Language}"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="SeaGreen"/>
+            <Setter Property="Padding" Value="4,0,4,0"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="ToolTip" Value="Language detected by a language profile"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Language}" Value="{x:Null}">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="CopyBadge" TargetType="TextBlock">
+            <Setter Property="Text" Value="copy"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Background" Value="MediumPurple"/>
+            <Setter Property="Padding" Value="4,0,4,0"/>
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="ToolTip" Value="Played again from History"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsCopy}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Item text is plain until "Select text" is chosen, so clicks and
+             double-clicks go to the list instead of starting a text selection. -->
+        <Style x:Key="ItemText" TargetType="TextBlock">
+            <Setter Property="Text" Value="{Binding Text}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelectingText}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="SelectableItemText" TargetType="TextBox">
+            <Setter Property="Text" Value="{Binding Text, Mode=OneWay}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsReadOnlyCaretVisible" Value="True"/>
+            <Setter Property="Background" Value="LightYellow"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelectingText}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Controls row -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+            <ToggleButton x:Name="EnabledToggle" Content="Speech: ON" Width="120" Height="32"
+                          Click="EnabledToggle_Click" IsChecked="True"/>
+            <Button x:Name="SkipButton" Content="Skip part" Width="80" Height="32" Margin="10,0,0,0"
+                    ToolTip="Skip the part that's playing; the next part of the message follows"
+                    Click="SkipButton_Click"/>
+            <Button x:Name="SkipMessageButton" Content="Skip message" Width="95" Height="32" Margin="6,0,0,0"
+                    ToolTip="Skip the rest of the current message"
+                    Click="SkipMessageButton_Click"/>
+            <TextBlock Text="Speed:" VerticalAlignment="Center" Margin="20,0,6,0"/>
+            <Slider x:Name="SpeedSlider" Minimum="100" Maximum="190" Width="150" TickFrequency="10"
+                    IsSnapToTickEnabled="True" ValueChanged="SpeedSlider_ValueChanged"/>
+            <TextBlock x:Name="SpeedLabel" Text="100%" VerticalAlignment="Center" Margin="10,0,0,0" Width="40"/>
+            <Button x:Name="SettingsButton" Content="Settings" Width="80" Height="32" Margin="20,0,0,0"
+                    Click="SettingsButton_Click"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" x:Name="StatusText" Text="Listening on 127.0.0.1:8766"
+                   Foreground="Gray" Margin="0,0,0,10"/>
+
+        <!-- Queue + History -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0" Margin="0,0,6,0">
+                <TextBlock DockPanel.Dock="Top" Text="Queue" FontWeight="Bold" Margin="0,0,0,6"/>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBox x:Name="ManualSpeakBox" Width="200" VerticalContentAlignment="Center"
+                             KeyDown="ManualSpeakBox_KeyDown"/>
+                    <Button Content="Speak" Width="60" Margin="6,0,0,0" Click="SpeakButton_Click"/>
+                </StackPanel>
+                <ListBox x:Name="QueueList" ItemsSource="{Binding Queue}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         KeyDown="ItemList_KeyDown">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Background="Transparent">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Select text" Click="SelectText_Click"/>
+                                        <MenuItem Header="Copy text" Click="CopyText_Click"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Sender}" FontWeight="Bold" FontSize="10"
+                                               Foreground="White" Background="SteelBlue" Padding="4,0,4,0"/>
+                                    <TextBlock Style="{StaticResource CopyBadge}"/>
+                                    <TextBlock Style="{StaticResource LanguageBadge}"/>
+                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="Gray" Margin="6,0,0,0"/>
+                                    <TextBlock Text="{Binding Status}" FontWeight="Bold" FontSize="10"
+                                               Foreground="DarkBlue" Margin="6,0,0,0"/>
+                                </StackPanel>
+                                <Grid>
+                                    <TextBlock Style="{StaticResource ItemText}"/>
+                                    <TextBox Style="{StaticResource SelectableItemText}"
+                                             LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
+                                </Grid>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <DockPanel Grid.Column="1" Margin="6,0,0,0">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="History (double-click to play again, right-click for more)"
+                               FontWeight="Bold" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="1" Content="Clear" Width="55" Margin="6,0,0,0" Click="ClearHistoryButton_Click"/>
+                </Grid>
+                <ListBox x:Name="HistoryList" ItemsSource="{Binding History}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         MouseDoubleClick="HistoryList_MouseDoubleClick"
+                         KeyDown="ItemList_KeyDown">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Background="Transparent">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Play again" FontWeight="Bold" Click="PlayAgain_Click"/>
+                                        <MenuItem Header="Select text" Click="SelectText_Click"/>
+                                        <MenuItem Header="Copy text" Click="CopyText_Click"/>
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Sender}" FontWeight="Bold" FontSize="10"
+                                               Foreground="White" Background="SteelBlue" Padding="4,0,4,0"/>
+                                    <TextBlock Style="{StaticResource CopyBadge}"/>
+                                    <TextBlock Style="{StaticResource LanguageBadge}"/>
+                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="Gray" Margin="6,0,0,0"/>
+                                    <TextBlock Text="{Binding EnqueuedAt}" FontSize="10" Foreground="Gray"
+                                               Margin="6,0,0,0"/>
+                                    <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="Bold" Margin="6,0,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="Gray"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Status}" Value="Skipped">
+                                                        <Setter Property="Foreground" Value="DarkOrange"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Status}" Value="Failed">
+                                                        <Setter Property="Foreground" Value="Red"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                                <Grid>
+                                    <TextBlock Style="{StaticResource ItemText}"/>
+                                    <TextBox Style="{StaticResource SelectableItemText}"
+                                             LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
+                                </Grid>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="3" x:Name="LastCommandText" Text="" Foreground="Gray" Margin="0,10,0,0"/>
+    </Grid>
+</Window>

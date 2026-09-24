@@ -1,0 +1,315 @@
+<Window x:Class="Herald.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Herald Settings" Height="780" Width="700"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="12">
+        <TabControl>
+            <TabItem Header="General" x:Name="GeneralTab">
+                <StackPanel Margin="8">
+                    <TextBlock Margin="0,0,0,12" TextWrapping="Wrap"
+                               Text="Long messages are split into parts at sentence ends (or at commas, if a sentence is very long). The first part is kept short so speech starts quickly, and the next part is prepared while the current one plays. Skip drops the rest of the message too."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Split messages longer than" VerticalAlignment="Center" Width="190"/>
+                        <TextBox Text="{Binding ChunkThreshold}" Width="70" VerticalContentAlignment="Center"/>
+                        <TextBlock Text="characters (50-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Aim for parts of about" VerticalAlignment="Center" Width="190"/>
+                        <TextBox Text="{Binding ChunkTargetLength}" Width="70" VerticalContentAlignment="Center"/>
+                        <TextBlock Text="characters (40-2000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                    </StackPanel>
+
+                    <TextBlock Margin="0,20,0,8" TextWrapping="Wrap"
+                               Text="History is kept between restarts. Once it's full, the oldest items and their audio files are deleted (each minute of speech is about 3 MB)."/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Keep the latest" VerticalAlignment="Center" Width="190"/>
+                        <TextBox Text="{Binding HistoryLimit}" Width="70" VerticalContentAlignment="Center"/>
+                        <TextBlock Text="History items (10-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                    </StackPanel>
+
+                    <CheckBox x:Name="StartWithWindowsBox" Content="Start Herald when I sign in to Windows (starts minimized)"
+                              Margin="0,20,0,4" Checked="StartWithWindows_Changed" Unchecked="StartWithWindows_Changed"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="20,0,0,0"
+                               Text="Adds Herald to your user's startup list (no installer or admin rights needed). It also shows up, and can be switched off, under Windows Settings > Apps > Startup. If you move Herald.exe, start it once by hand and it updates the entry."/>
+
+                    <CheckBox Content="Read text that is copied to the clipboard" Margin="0,20,0,4"
+                              IsChecked="{Binding ReadClipboardAutomatically}"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="20,0,0,0"
+                               Text="Spoken as the 'clipboard' sender, so it uses that sender's voice and rules. Follows the Speech on/off switch. Skipped: copies made by Herald or the speak-selection hotkey, the same text copied again within 2 seconds, and anything password managers mark as private."/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Senders">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Margin="0,0,0,10" TextWrapping="Wrap"
+                               Text="Sender tags are self-declared by whoever sends a message (not verified). Each tag gets its own mute switch, voice, replacements and characters-to-strip list."/>
+
+                    <DataGrid Grid.Row="1" x:Name="SendersGrid" ItemsSource="{Binding Senders}"
+                              SelectionChanged="SendersGrid_SelectionChanged"
+                              AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Sender tag" Binding="{Binding Sender}" IsReadOnly="True" Width="120"/>
+                            <DataGridCheckBoxColumn Header="Muted" Binding="{Binding Muted}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="Speak sender" Binding="{Binding AnnounceSender}" Width="80"/>
+                            <DataGridTextColumn Header="Characters to strip before synthesis" Binding="{Binding FilterCharacters}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="Add sender tag:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox x:Name="NewSenderBox" Width="160" VerticalContentAlignment="Center"
+                                 KeyDown="NewSenderBox_KeyDown"/>
+                        <Button Content="Add" Width="60" Margin="6,0,0,0" Click="AddSenderButton_Click"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="3" Margin="0,14,0,0">
+                        <TextBlock FontWeight="Bold" Text="Default voice for the selected sender" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Engine:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="EngineCombo" Width="200" DisplayMemberPath="DisplayName"
+                                      SelectionChanged="EngineCombo_SelectionChanged"/>
+                            <TextBlock Text="Voice:" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                            <ComboBox x:Name="VoiceCombo" Width="230"
+                                      SelectionChanged="VoiceCombo_SelectionChanged"/>
+                            <Button x:Name="TestVoiceButton" Content="Test" Width="50" Margin="6,0,0,0"
+                                    Click="TestVoiceButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="EngineHintText" Foreground="DarkOrange" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                        <TextBlock FontWeight="Bold" Text="When a language is detected, use another voice" Margin="0,12,0,4"/>
+                        <ItemsControl x:Name="LanguageRulesList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="{Binding Description}" VerticalAlignment="Center" Width="480" TextWrapping="Wrap"/>
+                                        <Button Content="Test" Width="50" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleTest_Click"/>
+                                        <Button Content="Remove" Width="60" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleRemove_Click"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="If" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="RuleLanguageCombo" Width="110"/>
+                            <TextBlock Text="use" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                            <ComboBox x:Name="RuleEngineCombo" Width="170" DisplayMemberPath="DisplayName"
+                                      SelectionChanged="RuleEngineCombo_SelectionChanged"/>
+                            <ComboBox x:Name="RuleVoiceCombo" Width="200" Margin="6,0,0,0"/>
+                            <Button x:Name="RuleAddButton" Content="Add" Width="50" Margin="6,0,0,0" Click="LanguageRuleAdd_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="LanguageRuleHint" Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Text="Languages and how they're detected are set up on the Languages tab."/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="4" Margin="0,14,0,6" TextWrapping="Wrap">
+                        <Run FontWeight="Bold" Text="Replacements for the selected sender"/>
+                        <Run Text="- applied before characters are stripped. Replace with a comma or period to get a pause. Use the empty last row to add; select a row and press Delete to remove."/>
+                    </TextBlock>
+
+                    <DataGrid Grid.Row="5" x:Name="ReplacementsGrid"
+                              ItemsSource="{Binding SelectedItem.Replacements, ElementName=SendersGrid}"
+                              AutoGenerateColumns="False" CanUserAddRows="True" CanUserDeleteRows="True"
+                              HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Find" Binding="{Binding Find}" Width="*"/>
+                            <DataGridTextColumn Header="Replace with" Binding="{Binding Replace}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Languages">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Margin="0,0,0,10" TextWrapping="Wrap"
+                               Text="How each language is recognised. A part counts as a language when at least 'Min matches' of its words are in the marker list; a single letter (like å) matches any word containing it. If several match, the one with the most matches wins. Which voice to use for a language is chosen per sender, on the Senders tab. Add a language in the empty last row; select a row and press Delete to remove it."/>
+
+                    <DataGrid Grid.Row="1" x:Name="LanguagesGrid" AutoGenerateColumns="False"
+                              CanUserAddRows="True" CanUserDeleteRows="True" HeadersVisibility="Column"
+                              RowEditEnding="LanguagesGrid_RowEditEnding">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Use" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
+                            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="100"/>
+                            <DataGridTextColumn Header="Marker words and letters" Binding="{Binding Markers}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextWrapping" Value="Wrap"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Min matches" Binding="{Binding MinMatches}" Width="80"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                        <TextBlock FontWeight="Bold" Text="Try the detection" Margin="0,0,0,6"/>
+                        <TextBox x:Name="DetectionTestBox" Height="50" TextWrapping="Wrap" AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto" TextChanged="DetectionTestBox_TextChanged"/>
+                        <TextBlock x:Name="DetectionResultText" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Engines">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="8">
+                        <TextBlock Margin="0,0,0,10" TextWrapping="Wrap"
+                                   Text="Speech engines Herald can use. Nothing is installed unless you click Install. If a sender's engine isn't ready, Herald uses the default Windows voice instead."/>
+
+                        <GroupBox Header="Windows voices" Padding="8" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock x:Name="WindowsDescription" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="WindowsStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button Content="Add voices in Windows Settings..." Padding="8,2" Click="OpenWindowsSpeechSettings_Click"/>
+                                    <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Kokoro" Padding="8">
+                            <StackPanel>
+                                <TextBlock x:Name="KokoroDescription" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="KokoroStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button x:Name="KokoroInstallButton" Content="Install" Padding="12,2" Click="KokoroInstall_Click"/>
+                                    <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
+                                </StackPanel>
+                                <TextBox x:Name="KokoroLog" Height="150" Margin="0,8,0,0" IsReadOnly="True"
+                                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas" FontSize="11" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Piper" Padding="8" Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock x:Name="PiperDescription" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="PiperStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
+
+                                <TextBlock Text="Download a voice:" Margin="0,10,0,4"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="PiperLoadCatalogButton" Content="Show available voices" Padding="8,2"
+                                            Click="PiperLoadCatalog_Click"/>
+                                    <ComboBox x:Name="PiperCatalogCombo" Width="360" Margin="6,0,0,0" IsEnabled="False"/>
+                                    <Button x:Name="PiperDownloadButton" Content="Download" Padding="8,2" Margin="6,0,0,0"
+                                            IsEnabled="False" Click="PiperDownload_Click"/>
+                                </StackPanel>
+
+                                <TextBlock Text="Installed voices:" Margin="0,10,0,4"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="PiperInstalledCombo" Width="360" DisplayMemberPath="DisplayName"/>
+                                    <Button Content="Remove" Padding="8,2" Margin="6,0,0,0" Click="PiperRemove_Click"/>
+                                </StackPanel>
+
+                                <TextBox x:Name="PiperLog" Height="120" Margin="0,8,0,0" IsReadOnly="True"
+                                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas" FontSize="11" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Claude Code" x:Name="ClaudeTab">
+                <StackPanel Margin="8">
+                    <TextBlock TextWrapping="Wrap" Margin="0,0,0,12"
+                               Text="Herald can read Claude Code's replies aloud as they appear. It does this with a hook in Claude Code's user settings (%USERPROFILE%\.claude\settings.json) that sends each block of text to Herald, tagged as the 'claude' sender."/>
+                    <TextBlock x:Name="ClaudeSummary" FontWeight="Bold" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ClaudeDetail" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button x:Name="ClaudeConnectButton" Content="Connect" Padding="12,2" Click="ClaudeConnect_Click"/>
+                        <Button x:Name="ClaudeDisconnectButton" Content="Disconnect" Padding="12,2" Margin="6,0,0,0" Click="ClaudeDisconnect_Click"/>
+                        <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="ClaudeRefresh_Click"/>
+                        <Button Content="Open settings.json" Padding="8,2" Margin="16,0,0,0" Click="ClaudeOpenSettings_Click"/>
+                    </StackPanel>
+                    <CheckBox Content="Ask when Herald starts if Claude Code isn't connected" Margin="0,16,0,0"
+                              IsChecked="{Binding AskToConnectClaude}"/>
+                    <TextBlock TextWrapping="Wrap" Margin="0,12,0,0" Foreground="Gray"
+                               Text="Connect and Disconnect save a backup of the previous settings file as settings.json.herald-backup. Open Claude Code sessions may need a restart to notice the change."/>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Hotkeys">
+                <DockPanel Margin="8">
+                    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,10" TextWrapping="Wrap"
+                               Text="Global hotkeys, registered via Windows' RegisterHotKey - Herald is only notified when one of these exact combos fires, it never observes other keystrokes. Work regardless of which window is focused. Click Rebind, then press the new combination."/>
+                    <DataGrid DockPanel.Dock="Top" x:Name="HotkeysGrid"
+                              AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+                              HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Label}" IsReadOnly="True" Width="*"/>
+                            <DataGridTextColumn Header="Current keys" Binding="{Binding Display}" IsReadOnly="True" Width="140"/>
+                            <DataGridTemplateColumn Header="" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Rebind" Click="RebindButton_Click" Tag="{Binding}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Files">
+                <DockPanel Margin="8">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Width="480"
+                                   Text="Files Herald reads and writes. Open shows a file in its default editor (scripts always open in Notepad, so they can't run by accident)."/>
+                        <Button Content="Refresh" Width="70" Margin="10,0,0,0" Click="RefreshFiles_Click"/>
+                    </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="FilesList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="170"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Path, Mode=OneWay}" IsReadOnly="True"
+                                                 VerticalContentAlignment="Center" ToolTip="{Binding Status}">
+                                            <TextBox.Style>
+                                                <Style TargetType="TextBox">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Exists}" Value="False">
+                                                            <Setter Property="Foreground" Value="Gray"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBox.Style>
+                                        </TextBox>
+                                        <Button Grid.Column="2" Content="Open" Width="55" Margin="6,0,0,0"
+                                                IsEnabled="{Binding Exists}" Tag="{Binding}" Click="OpenFile_Click"/>
+                                        <Button Grid.Column="3" Content="Show in folder" Padding="6,0" Margin="6,0,0,0"
+                                                Tag="{Binding}" Click="ShowInFolder_Click"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>
