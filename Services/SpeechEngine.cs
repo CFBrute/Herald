@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Herald.Models;
 using Herald.Services.Engines;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace Herald.Services;
@@ -126,6 +127,55 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private int _volume = 100;
+    /// <summary>
+    /// Herald's own playback volume, 0-100%. Scales the audio Herald plays (all engines),
+    /// not the Windows volume. Applies to a part that's already playing too.
+    /// </summary>
+    public int Volume
+    {
+        get => _volume;
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 100);
+            if (_volume == clamped) return;
+            _volume = clamped;
+            if (_currentReader is { } reader) reader.Volume = clamped / 100f;
+            OnPropertyChanged(nameof(Volume));
+            SaveSettings();
+        }
+    }
+
+    // The file being played right now, so a volume change is heard immediately.
+    private volatile AudioFileReader? _currentReader;
+
+    private ThemeChoice _theme = ThemeChoice.System;
+    /// <summary>Light, dark, or follow Windows (the default).</summary>
+    public ThemeChoice Theme
+    {
+        get => _theme;
+        set
+        {
+            if (_theme == value) return;
+            _theme = value;
+            OnPropertyChanged(nameof(Theme));
+            SaveSettings();
+        }
+    }
+
+    private bool _trayHintShown;
+    /// <summary>Whether the "Herald is still running in the tray" notice was ever shown.</summary>
+    public bool TrayHintShown
+    {
+        get => _trayHintShown;
+        set
+        {
+            if (_trayHintShown == value) return;
+            _trayHintShown = value;
+            SaveSettings();
+        }
+    }
+
     private bool _readClipboardAutomatically;
     /// <summary>Read any text copied to the clipboard (sender "clipboard"). Off by default.</summary>
     public bool ReadClipboardAutomatically
@@ -192,6 +242,9 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             if (dto.HistoryLimit > 0) _historyLimit = Math.Clamp(dto.HistoryLimit, 10, 5000);
             _askToConnectClaude = dto.AskToConnectClaude ?? true;
             _readClipboardAutomatically = dto.ReadClipboardAutomatically ?? false;
+            _trayHintShown = dto.TrayHintShown ?? false;
+            if (Enum.TryParse<ThemeChoice>(dto.Theme, out var theme)) _theme = theme;
+            if (dto.Volume is { } volume) _volume = Math.Clamp(volume, 0, 100);
         }
         catch
         {
@@ -204,7 +257,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         try
         {
             var dto = new EngineSettingsDto(_speedPercent, _chunkThreshold, _chunkTargetLength, _historyLimit, _askToConnectClaude,
-                                            _readClipboardAutomatically);
+                                            _readClipboardAutomatically, _trayHintShown, _theme.ToString(), _volume);
             var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_settingsFilePath, json);
         }
@@ -215,7 +268,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     }
 
     private record EngineSettingsDto(int SpeedPercent, int ChunkThreshold = 0, int ChunkTargetLength = 0, int HistoryLimit = 0,
-                                     bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null);
+                                     bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null,
+                                     bool? TrayHintShown = null, string? Theme = null, int? Volume = null);
 
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
@@ -251,7 +305,22 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         {
             // unreadable history file - start with an empty History
         }
+
+        // Re-derive the alternating shading: flip whenever the message (group) changes.
+        var band = 0;
+        for (var i = 0; i < History.Count; i++)
+        {
+            if (i > 0 && History[i].GroupId != History[i - 1].GroupId) band ^= 1;
+            History[i].Band = band;
+        }
+        // New messages continue with the shade opposite to the newest one in History.
+        _bandCounter = History.Count > 0 ? History[0].Band : 1;
     }
+
+    private int _bandCounter;
+
+    /// <summary>Next shade for a new message: alternates 0, 1, 0, ...</summary>
+    private int NextBand() => Interlocked.Increment(ref _bandCounter) & 1;
 
     /// <summary>
     /// Finds a saved audio file: at its recorded path, or by name in the current history
@@ -356,6 +425,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         var parts = TextChunker.Split(cleaned, ChunkThreshold, ChunkTargetLength);
         if (parts.Count == 0) return;
         var groupId = Guid.NewGuid();
+        var band = NextBand();
         // Only look for the languages this sender has a voice rule for.
         var ruleLanguages = settings.LanguageRules.Select(r => r.LanguageName).ToHashSet();
         var profiles = LanguageProfiles.Snapshot.Where(p => ruleLanguages.Contains(p.Name)).ToList();
@@ -368,6 +438,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
                 Language = LanguageDetector.Detect(parts[i], profiles)?.Name,
                 PlayWhenDisabled = playWhenDisabled,
                 GroupId = groupId,
+                Band = band,
                 PartIndex = i + 1,
                 PartCount = parts.Count
             });
@@ -463,6 +534,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         {
             PlayWhenDisabled = true,
             IsCopy = true,
+            Band = NextBand(),
             Language = source.Language,
             GroupId = Guid.NewGuid(),
             PreparedAudioPath = source.AudioFilePath is { } path && File.Exists(path) ? path : null
@@ -565,7 +637,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             // without waiting for synthesis in between.
             StartPrefetch();
 
-            PlayFile(outPath);
+            var playback = PlayFile(outPath);
+            LogPlayback(item, outPath, playback);
 
             item.Status = _skipRequested ? QueueItemStatus.Skipped : QueueItemStatus.Done;
             MoveToHistory(item);
@@ -686,38 +759,157 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     /// The player is only ever touched from this thread; other threads just signal it,
     /// since calling Stop() on the player from another thread silently did nothing.
     /// </summary>
-    private void PlayFile(string path)
+    private enum PlaybackEnd { Finished, Stopped, TimedOut, Stalled, Error }
+
+    private record PlaybackResult(PlaybackEnd End, TimeSpan Duration, TimeSpan Elapsed, string? Error = null, int Attempts = 1);
+
+    private PlaybackResult PlayFile(string path)
     {
         var stop = new ManualResetEventSlim(false);
         _currentStop = stop;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var duration = TimeSpan.Zero;
         try
         {
-            using var reader = new AudioFileReader(path);
-            using var output = new WaveOut();
-            using var done = new ManualResetEventSlim(false);
-            output.PlaybackStopped += (_, _) => done.Set();
+            using var reader = new AudioFileReader(path) { Volume = _volume / 100f };
+            _currentReader = reader;
+            duration = reader.TotalTime;
 
-            output.Init(reader);
-            output.Play();
-
-            // Safety net: never wait much longer than the clip itself.
-            var timeout = reader.TotalTime + TimeSpan.FromSeconds(5);
-            WaitHandle.WaitAny([done.WaitHandle, stop.WaitHandle], timeout);
-
-            if (!done.IsSet)
+            // Output through WASAPI (the modern Windows audio path). The older WaveOut now and
+            // then started a clip but never played it, silently waiting out its whole length.
+            // A clip whose playback doesn't move forward is started once more from the top.
+            const int maxAttempts = 2;
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
+                reader.Position = 0;
+                using var output = new WasapiOut(AudioClientShareMode.Shared, 100);
+                using var done = new ManualResetEventSlim(false);
+                Exception? playbackError = null;
+                output.PlaybackStopped += (_, e) =>
+                {
+                    playbackError = e.Exception;
+                    done.Set();
+                };
+
+                output.Init(reader);
+                output.Play();
+
+                var attemptStart = watch.Elapsed;
+                var lastPosition = -1L;
+                var lastMove = watch.Elapsed;
+                var stalled = false;
+
+                while (true)
+                {
+                    var signalled = WaitHandle.WaitAny([done.WaitHandle, stop.WaitHandle], 200);
+                    if (signalled == 0)
+                    {
+                        return playbackError != null
+                            ? new PlaybackResult(PlaybackEnd.Error, duration, watch.Elapsed, playbackError.Message, attempt)
+                            : new PlaybackResult(PlaybackEnd.Finished, duration, watch.Elapsed, Attempts: attempt);
+                    }
+                    if (signalled == 1)
+                    {
+                        output.Stop();
+                        return new PlaybackResult(PlaybackEnd.Stopped, duration, watch.Elapsed, Attempts: attempt);
+                    }
+
+                    var position = reader.Position;
+                    if (position != lastPosition)
+                    {
+                        lastPosition = position;
+                        lastMove = watch.Elapsed;
+                    }
+                    else if (position < reader.Length && watch.Elapsed - lastMove > TimeSpan.FromSeconds(1.5))
+                    {
+                        stalled = true;
+                        break;
+                    }
+
+                    // Safety net: never wait much longer than the clip itself.
+                    if (watch.Elapsed - attemptStart > duration + TimeSpan.FromSeconds(5)) break;
+                }
+
                 output.Stop();
                 done.Wait(TimeSpan.FromSeconds(1));
+                if (!stalled) return new PlaybackResult(PlaybackEnd.TimedOut, duration, watch.Elapsed, Attempts: attempt);
             }
+
+            return new PlaybackResult(PlaybackEnd.Stalled, duration, watch.Elapsed, Attempts: maxAttempts);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore playback errors, move on
+            return new PlaybackResult(PlaybackEnd.Error, duration, watch.Elapsed, ex.Message);
         }
         finally
         {
+            _currentReader = null;
             Interlocked.CompareExchange(ref _currentStop, null, stop);
             stop.Dispose();
+        }
+    }
+
+    /// <summary>Loudest sample in a file (0 = silence, 1 = full scale), or -1 if unreadable.</summary>
+    private static float PeakLevel(string path)
+    {
+        try
+        {
+            using var reader = new AudioFileReader(path);
+            ISampleProvider samples = reader;
+            var buffer = new float[16384];
+            var peak = 0f;
+            int read;
+            while ((read = samples.Read(buffer.AsSpan())) > 0)
+            {
+                for (var i = 0; i < read; i++) peak = Math.Max(peak, Math.Abs(buffer[i]));
+            }
+            return peak;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// One line per played part in playback.log, to diagnose parts that play without sound:
+    /// a near-zero peak means the audio file itself was silent; a normal peak means the
+    /// file was fine and the sound got lost on the way to the speakers.
+    /// </summary>
+    private void LogPlayback(QueueItem item, string path, PlaybackResult result)
+    {
+        try
+        {
+            var logPath = Path.Combine(AppDataDir, "playback.log");
+            if (File.Exists(logPath) && new FileInfo(logPath).Length > 512 * 1024)
+            {
+                File.Move(logPath, Path.Combine(AppDataDir, "playback.old.log"), overwrite: true);
+            }
+
+            string voice;
+            if (item.PreparedAudioPath != null)
+            {
+                voice = "copy (reused audio)";
+            }
+            else
+            {
+                var (engine, voiceId) = VoiceFor(item, SenderSettings.GetOrCreate(item.Sender));
+                voice = $"{engine.Id}/{voiceId}";
+            }
+
+            var line = string.Join(" | ",
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                $"{item.Sender} {item.PartIndex}/{item.PartCount}",
+                voice,
+                $"clip {result.Duration.TotalSeconds:0.0}s",
+                $"peak {PeakLevel(path):0.000}",
+                $"{result.End} after {result.Elapsed.TotalSeconds:0.0}s" + (result.Attempts > 1 ? $" (restarted, attempt {result.Attempts})" : string.Empty),
+                Path.GetFileName(path) + (result.Error != null ? " | error: " + result.Error : string.Empty));
+            File.AppendAllText(logPath, line + Environment.NewLine);
+        }
+        catch
+        {
+            // diagnostics must never break playback
         }
     }
 

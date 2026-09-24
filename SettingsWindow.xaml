@@ -2,22 +2,49 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Herald Settings" Height="780" Width="700"
+        Foreground="{DynamicResource PrimaryText}"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="12">
         <TabControl>
             <TabItem Header="General" x:Name="GeneralTab">
                 <StackPanel Margin="8">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="Theme" VerticalAlignment="Center" Width="190"/>
+                        <ComboBox x:Name="ThemeCombo" Width="160" SelectionChanged="ThemeCombo_SelectionChanged">
+                            <ComboBoxItem Content="Follow Windows" Tag="System"/>
+                            <ComboBoxItem Content="Light" Tag="Light"/>
+                            <ComboBoxItem Content="Dark" Tag="Dark"/>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="Volume" VerticalAlignment="Center" Width="190"/>
+                        <Slider Minimum="0" Maximum="100" Width="220" TickFrequency="5" IsSnapToTickEnabled="True"
+                                Value="{Binding Volume}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Volume, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
+                        <TextBlock Text="Herald's own sound only, not the Windows volume" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SubtleText}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="Speed" VerticalAlignment="Center" Width="190"/>
+                        <Slider Minimum="100" Maximum="190" Width="220" TickFrequency="10" IsSnapToTickEnabled="True"
+                                Value="{Binding SpeedPercent}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
+                        <TextBlock Text="Also on the main window and Alt+Shift+0-9" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SubtleText}"/>
+                    </StackPanel>
+
                     <TextBlock Margin="0,0,0,12" TextWrapping="Wrap"
-                               Text="Long messages are split into parts at sentence ends (or at commas, if a sentence is very long). The first part is kept short so speech starts quickly, and the next part is prepared while the current one plays. Skip drops the rest of the message too."/>
+                               Text="Long messages are split into parts at new lines, sentence ends, ';' and ':' (commas only in a very long stretch without any of those). The first part is kept short so speech starts quickly, and the next part is prepared while the current one plays."/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <TextBlock Text="Split messages longer than" VerticalAlignment="Center" Width="190"/>
                         <TextBox Text="{Binding ChunkThreshold}" Width="70" VerticalContentAlignment="Center"/>
-                        <TextBlock Text="characters (50-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                        <TextBlock Text="characters (50-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{DynamicResource SubtleText}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Aim for parts of about" VerticalAlignment="Center" Width="190"/>
                         <TextBox Text="{Binding ChunkTargetLength}" Width="70" VerticalContentAlignment="Center"/>
-                        <TextBlock Text="characters (40-2000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                        <TextBlock Text="characters (40-2000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{DynamicResource SubtleText}"/>
                     </StackPanel>
 
                     <TextBlock Margin="0,20,0,8" TextWrapping="Wrap"
@@ -25,17 +52,17 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Keep the latest" VerticalAlignment="Center" Width="190"/>
                         <TextBox Text="{Binding HistoryLimit}" Width="70" VerticalContentAlignment="Center"/>
-                        <TextBlock Text="History items (10-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+                        <TextBlock Text="History items (10-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{DynamicResource SubtleText}"/>
                     </StackPanel>
 
-                    <CheckBox x:Name="StartWithWindowsBox" Content="Start Herald when I sign in to Windows (starts minimized)"
+                    <CheckBox x:Name="StartWithWindowsBox" Content="Start Herald when I sign in to Windows (starts in the tray)"
                               Margin="0,20,0,4" Checked="StartWithWindows_Changed" Unchecked="StartWithWindows_Changed"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="20,0,0,0"
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
                                Text="Adds Herald to your user's startup list (no installer or admin rights needed). It also shows up, and can be switched off, under Windows Settings > Apps > Startup. If you move Herald.exe, start it once by hand and it updates the entry."/>
 
                     <CheckBox Content="Read text that is copied to the clipboard" Margin="0,20,0,4"
                               IsChecked="{Binding ReadClipboardAutomatically}"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="Gray" Margin="20,0,0,0"
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
                                Text="Spoken as the 'clipboard' sender, so it uses that sender's voice and rules. Follows the Speech on/off switch. Skipped: copies made by Herald or the speak-selection hotkey, the same text copied again within 2 seconds, and anything password managers mark as private."/>
                 </StackPanel>
             </TabItem>
@@ -85,7 +112,7 @@
                             <Button x:Name="TestVoiceButton" Content="Test" Width="50" Margin="6,0,0,0"
                                     Click="TestVoiceButton_Click"/>
                         </StackPanel>
-                        <TextBlock x:Name="EngineHintText" Foreground="DarkOrange" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="EngineHintText" Foreground="{DynamicResource WarningText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
 
                         <TextBlock FontWeight="Bold" Text="When a language is detected, use another voice" Margin="0,12,0,4"/>
                         <ItemsControl x:Name="LanguageRulesList">
@@ -108,7 +135,7 @@
                             <ComboBox x:Name="RuleVoiceCombo" Width="200" Margin="6,0,0,0"/>
                             <Button x:Name="RuleAddButton" Content="Add" Width="50" Margin="6,0,0,0" Click="LanguageRuleAdd_Click"/>
                         </StackPanel>
-                        <TextBlock x:Name="LanguageRuleHint" Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,0"
+                        <TextBlock x:Name="LanguageRuleHint" Foreground="{DynamicResource SubtleText}" TextWrapping="Wrap" Margin="0,4,0,0"
                                    Text="Languages and how they're detected are set up on the Languages tab."/>
                     </StackPanel>
 
@@ -241,7 +268,7 @@
                     </StackPanel>
                     <CheckBox Content="Ask when Herald starts if Claude Code isn't connected" Margin="0,16,0,0"
                               IsChecked="{Binding AskToConnectClaude}"/>
-                    <TextBlock TextWrapping="Wrap" Margin="0,12,0,0" Foreground="Gray"
+                    <TextBlock TextWrapping="Wrap" Margin="0,12,0,0" Foreground="{DynamicResource SubtleText}"
                                Text="Connect and Disconnect save a backup of the previous settings file as settings.json.herald-backup. Open Claude Code sessions may need a restart to notice the change."/>
                 </StackPanel>
             </TabItem>
@@ -293,7 +320,7 @@
                                                 <Style TargetType="TextBox">
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding Exists}" Value="False">
-                                                            <Setter Property="Foreground" Value="Gray"/>
+                                                            <Setter Property="Foreground" Value="{DynamicResource SubtleText}"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

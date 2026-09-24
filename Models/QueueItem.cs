@@ -40,6 +40,12 @@ public class QueueItem : INotifyPropertyChanged
     /// <summary>Name of the language profile detected for this part, or null.</summary>
     public string? Language { get; init; }
 
+    /// <summary>
+    /// 0 or 1, alternating per message, so the lists can shade whole messages (all their
+    /// parts together) in alternating backgrounds.
+    /// </summary>
+    public int Band { get; set; }
+
     private bool _isSelectingText;
     /// <summary>UI state: the item's text is shown as a selectable text box.</summary>
     public bool IsSelectingText

@@ -6,7 +6,21 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon); WPF has no tray icon of its own. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- The exe's icon; windows without an Icon of their own use it too. -->
+    <ApplicationIcon>Assets\Herald.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\Herald.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep WPF's types unambiguous (MessageBox, Clipboard, Button, ...). -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="NAudio" Version="3.1.0" />

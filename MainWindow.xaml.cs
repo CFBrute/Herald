@@ -17,6 +17,12 @@ public partial class MainWindow : Window
     private readonly HotkeySettingsStore _hotkeySettings;
     private readonly HotkeyManager _hotkeyManager;
     private readonly ClaudeCodeIntegration _claude;
+    private readonly TrayIcon _tray;
+    private SettingsWindow? _settingsWindow;
+
+    // Set when Herald should really quit (Exit in the tray menu, or Windows signing out);
+    // otherwise closing the window only hides it to the tray.
+    private bool _exiting;
 
     public MainWindow(SpeechEngine engine, HookServer hookServer, HotkeySettingsStore hotkeySettings, ClaudeCodeIntegration claude)
     {
@@ -41,11 +47,70 @@ public partial class MainWindow : Window
         // Enabled/SpeedPercent can also change via a global hotkey, which never goes
         // through HookServer - keep the GUI in sync regardless of which path fired.
         _engine.PropertyChanged += OnEnginePropertyChanged;
+
+        _tray = new TrayIcon();
+        _tray.SetSpeechEnabled(_engine.Enabled);
+        _tray.OpenRequested += BringToFront;
+        _tray.ToggleSpeechRequested += ToggleSpeech;
+        _tray.SettingsRequested += () =>
+        {
+            BringToFront();
+            OpenSettings();
+        };
+        _tray.ExitRequested += ExitHerald;
+
+        Closing += (_, e) =>
+        {
+            if (_exiting) return;
+            e.Cancel = true;
+            Hide();
+            if (!_engine.TrayHintShown)
+            {
+                _tray.ShowStillRunningHint();
+                _engine.TrayHintShown = true;
+            }
+        };
+        // Never block Windows from signing out or shutting down.
+        Application.Current.SessionEnding += (_, _) => _exiting = true;
+
         Closed += (_, _) =>
         {
             _hotkeyManager.Dispose();
             clipboardWatcher.Dispose();
+            _tray.Dispose();
         };
+    }
+
+    /// <summary>Really quits Herald (the tray menu's Exit).</summary>
+    private void ExitHerald()
+    {
+        _exiting = true;
+        Application.Current.Shutdown();
+    }
+
+    private void ToggleSpeech()
+    {
+        _engine.Enabled = !_engine.Enabled;
+        _engine.Announce(_engine.Enabled ? "Activated" : "Off");
+    }
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(_engine, _hotkeySettings, _hotkeyManager, _claude) { Owner = this };
+        try
+        {
+            _settingsWindow.ShowDialog();
+        }
+        finally
+        {
+            _settingsWindow = null;
+        }
     }
 
     /// <summary>
@@ -121,6 +186,7 @@ public partial class MainWindow : Window
             SpeedSlider.Value = _engine.SpeedPercent;
             SpeedLabel.Text = $"{_engine.SpeedPercent}%";
             UpdateEnabledButton();
+            _tray.SetSpeechEnabled(_engine.Enabled);
         });
     }
 
@@ -229,11 +295,7 @@ public partial class MainWindow : Window
         return null;
     }
 
-    private void SettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        var settingsWindow = new SettingsWindow(_engine, _hotkeySettings, _hotkeyManager, _claude) { Owner = this };
-        settingsWindow.ShowDialog();
-    }
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) => OpenSettings();
 
     private void ClearHistoryButton_Click(object sender, RoutedEventArgs e)
     {

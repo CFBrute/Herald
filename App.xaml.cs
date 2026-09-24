@@ -51,10 +51,18 @@ public partial class App : Application
         _hookServer = new HookServer(_engine);
         _hookServer.Start();
 
+        // Herald keeps running in the tray when its window is closed; only Exit in the
+        // tray menu (or Windows signing out) ends it.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        // Before any window is created: the windows' styles are based on the theme.
+        ThemeManager.Apply(_engine.Theme);
+
         var window = new MainWindow(_engine, _hookServer, hotkeySettings, new ClaudeCodeIntegration(appDataDir));
         MainWindow = window;
-        if (e.Args.Contains(StartupRegistration.MinimizedArgument)) window.WindowState = WindowState.Minimized;
-        window.Show();
+
+        // Started with Windows: stay in the tray until the user opens it.
+        if (!e.Args.Contains(StartupRegistration.MinimizedArgument)) window.Show();
     }
 
     /// <summary>Asks the Herald that's already running to bring its window forward.</summary>

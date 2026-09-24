@@ -1,8 +1,53 @@
 <Window x:Class="Herald.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Herald" Height="600" Width="720">
+        Title="Herald" Height="600" Width="780"
+        Foreground="{DynamicResource PrimaryText}">
     <Window.Resources>
+        <!-- Alternating shade per message: all parts of one message share a background. -->
+        <Style x:Key="BandedItem" TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <!-- No vertical padding, so the stripe runs unbroken through a message's parts. -->
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="{DynamicResource ItemBackground}"/>
+            <!-- A plain template: the theme's own adds spacing around each item, which
+                 would break the stripe between the parts of a message. -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverItemBackground}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedItemBackground}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Band}" Value="1">
+                    <Setter Property="Background" Value="{DynamicResource ItemAltBackground}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- Coloured stripe on the left of each message, alternating like the background. -->
+        <Style x:Key="BandStripe" TargetType="Border">
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Background" Value="#3B82F6"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Band}" Value="1">
+                    <Setter Property="Background" Value="#F59E0B"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
         <Style x:Key="LanguageBadge" TargetType="TextBlock">
             <Setter Property="Text" Value="{Binding Language}"/>
             <Setter Property="FontSize" Value="10"/>
@@ -38,6 +83,7 @@
              double-clicks go to the list instead of starting a text selection. -->
         <Style x:Key="ItemText" TargetType="TextBlock">
             <Setter Property="Text" Value="{Binding Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsSelectingText}" Value="True">
@@ -50,7 +96,7 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="IsReadOnly" Value="True"/>
             <Setter Property="IsReadOnlyCaretVisible" Value="True"/>
-            <Setter Property="Background" Value="LightYellow"/>
+            <Setter Property="Background" Value="{DynamicResource SelectionBoxBackground}"/>
             <Setter Property="Visibility" Value="Collapsed"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding IsSelectingText}" Value="True">
@@ -74,7 +120,7 @@
             <Button x:Name="SkipButton" Content="Skip part" Width="80" Height="32" Margin="10,0,0,0"
                     ToolTip="Skip the part that's playing; the next part of the message follows"
                     Click="SkipButton_Click"/>
-            <Button x:Name="SkipMessageButton" Content="Skip message" Width="95" Height="32" Margin="6,0,0,0"
+            <Button x:Name="SkipMessageButton" Content="Skip message" Width="120" Height="32" Margin="6,0,0,0"
                     ToolTip="Skip the rest of the current message"
                     Click="SkipMessageButton_Click"/>
             <TextBlock Text="Speed:" VerticalAlignment="Center" Margin="20,0,6,0"/>
@@ -86,7 +132,7 @@
         </StackPanel>
 
         <TextBlock Grid.Row="1" x:Name="StatusText" Text="Listening on 127.0.0.1:8766"
-                   Foreground="Gray" Margin="0,0,0,10"/>
+                   Foreground="{DynamicResource SubtleText}" Margin="0,0,0,10"/>
 
         <!-- Queue + History -->
         <Grid Grid.Row="2">
@@ -103,11 +149,14 @@
                     <Button Content="Speak" Width="60" Margin="6,0,0,0" Click="SpeakButton_Click"/>
                 </StackPanel>
                 <ListBox x:Name="QueueList" ItemsSource="{Binding Queue}"
+                         ItemContainerStyle="{StaticResource BandedItem}" Background="{DynamicResource ListBackground}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          KeyDown="ItemList_KeyDown">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Background="Transparent">
+                            <DockPanel>
+                            <Border DockPanel.Dock="Left" Style="{StaticResource BandStripe}"/>
+                            <StackPanel Background="Transparent" Margin="0,3,4,3">
                                 <StackPanel.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Select text" Click="SelectText_Click"/>
@@ -119,9 +168,9 @@
                                                Foreground="White" Background="SteelBlue" Padding="4,0,4,0"/>
                                     <TextBlock Style="{StaticResource CopyBadge}"/>
                                     <TextBlock Style="{StaticResource LanguageBadge}"/>
-                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="Gray" Margin="6,0,0,0"/>
+                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="{DynamicResource SubtleText}" Margin="6,0,0,0"/>
                                     <TextBlock Text="{Binding Status}" FontWeight="Bold" FontSize="10"
-                                               Foreground="DarkBlue" Margin="6,0,0,0"/>
+                                               Foreground="{DynamicResource StatusText}" Margin="6,0,0,0"/>
                                 </StackPanel>
                                 <Grid>
                                     <TextBlock Style="{StaticResource ItemText}"/>
@@ -129,6 +178,7 @@
                                              LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
                                 </Grid>
                             </StackPanel>
+                            </DockPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
@@ -145,12 +195,15 @@
                     <Button Grid.Column="1" Content="Clear" Width="55" Margin="6,0,0,0" Click="ClearHistoryButton_Click"/>
                 </Grid>
                 <ListBox x:Name="HistoryList" ItemsSource="{Binding History}"
+                         ItemContainerStyle="{StaticResource BandedItem}" Background="{DynamicResource ListBackground}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          MouseDoubleClick="HistoryList_MouseDoubleClick"
                          KeyDown="ItemList_KeyDown">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Background="Transparent">
+                            <DockPanel>
+                            <Border DockPanel.Dock="Left" Style="{StaticResource BandStripe}"/>
+                            <StackPanel Background="Transparent" Margin="0,3,4,3">
                                 <StackPanel.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Play again" FontWeight="Bold" Click="PlayAgain_Click"/>
@@ -163,19 +216,19 @@
                                                Foreground="White" Background="SteelBlue" Padding="4,0,4,0"/>
                                     <TextBlock Style="{StaticResource CopyBadge}"/>
                                     <TextBlock Style="{StaticResource LanguageBadge}"/>
-                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="Gray" Margin="6,0,0,0"/>
-                                    <TextBlock Text="{Binding EnqueuedAt}" FontSize="10" Foreground="Gray"
+                                    <TextBlock Text="{Binding PartLabel}" FontSize="10" Foreground="{DynamicResource SubtleText}" Margin="6,0,0,0"/>
+                                    <TextBlock Text="{Binding EnqueuedAt}" FontSize="10" Foreground="{DynamicResource SubtleText}"
                                                Margin="6,0,0,0"/>
                                     <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="Bold" Margin="6,0,0,0">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="Gray"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource SubtleText}"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding Status}" Value="Skipped">
-                                                        <Setter Property="Foreground" Value="DarkOrange"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource WarningText}"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding Status}" Value="Failed">
-                                                        <Setter Property="Foreground" Value="Red"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource ErrorText}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -188,12 +241,13 @@
                                              LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
                                 </Grid>
                             </StackPanel>
+                            </DockPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
             </DockPanel>
         </Grid>
 
-        <TextBlock Grid.Row="3" x:Name="LastCommandText" Text="" Foreground="Gray" Margin="0,10,0,0"/>
+        <TextBlock Grid.Row="3" x:Name="LastCommandText" Text="" Foreground="{DynamicResource SubtleText}" Margin="0,10,0,0"/>
     </Grid>
 </Window>

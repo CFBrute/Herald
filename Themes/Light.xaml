@@ -1,0 +1,16 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Herald's own colours for the light theme; Dark.xaml has the same keys. -->
+    <SolidColorBrush x:Key="PrimaryText" Color="#1A1A1A"/>
+    <SolidColorBrush x:Key="ListBackground" Color="#FAFAFA"/>
+    <SolidColorBrush x:Key="ItemBackground" Color="#FAFAFA"/>
+    <SolidColorBrush x:Key="ItemAltBackground" Color="#EFF1F3"/>
+    <SolidColorBrush x:Key="HoverItemBackground" Color="#E8EDF3"/>
+    <SolidColorBrush x:Key="SelectedItemBackground" Color="#D6E4F5"/>
+    <SolidColorBrush x:Key="SubtleText" Color="#6B6B6B"/>
+    <SolidColorBrush x:Key="StatusText" Color="#1E3A8A"/>
+    <SolidColorBrush x:Key="SelectionBoxBackground" Color="#FFFFE0"/>
+    <SolidColorBrush x:Key="WarningText" Color="#C05A00"/>
+    <SolidColorBrush x:Key="ErrorText" Color="#C62828"/>
+    <SolidColorBrush x:Key="SuccessText" Color="#1B7F3A"/>
+</ResourceDictionary>

@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
 
         _claude = claude;
         StartWithWindowsBox.IsChecked = StartupRegistration.IsEnabled;
+        ThemeCombo.SelectedItem = ThemeCombo.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == engine.Theme.ToString());
         ClaudeTab.DataContext = engine;
         RefreshClaudeStatus();
 
@@ -376,6 +377,17 @@ public partial class SettingsWindow : Window
         LoadVoicePickers();
     }
 
+    private void ThemeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Fires once while the window is being built, before _engine is set.
+        if (_engine == null || ThemeCombo.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+
+        var choice = Enum.Parse<ThemeChoice>(tag);
+        if (choice == _engine.Theme) return;
+        _engine.Theme = choice;
+        ThemeManager.Apply(choice);
+    }
+
     // Checked/Unchecked (not Click) so keyboard and accessibility tools change the setting too.
     private void StartWithWindows_Changed(object sender, RoutedEventArgs e)
     {
@@ -414,6 +426,7 @@ public partial class SettingsWindow : Window
             new("Hotkeys", Path.Combine(data, "hotkeys.json"), false),
             new("History list", Path.Combine(data, "history.json"), false),
             new("Crash log", Path.Combine(data, "crash.log"), false),
+            new("Playback log", Path.Combine(data, "playback.log"), false),
             new("Herald data folder", data, true),
             new("History audio folder", _engine.HistoryDir, true),
             new("Engines folder (Kokoro, Piper)", Path.Combine(data, "engines"), true)
@@ -488,9 +501,9 @@ public partial class SettingsWindow : Window
     {
         var status = _claude.GetStatus();
         ClaudeSummary.Text = status.Summary;
-        ClaudeSummary.Foreground = status.State == ClaudeConnectionState.Connected
-            ? System.Windows.Media.Brushes.DarkGreen
-            : System.Windows.Media.Brushes.DarkOrange;
+        // A resource reference (not a fixed brush) so the colour follows light/dark switches.
+        ClaudeSummary.SetResourceReference(TextBlock.ForegroundProperty,
+            status.State == ClaudeConnectionState.Connected ? "SuccessText" : "WarningText");
         ClaudeDetail.Text = status.Detail;
 
         ClaudeConnectButton.IsEnabled = status.State is ClaudeConnectionState.NotConnected
