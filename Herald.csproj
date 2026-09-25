@@ -27,7 +27,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Engines\kokoro_server.py" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Embedded, not a loose file next to the exe: Herald writes it to its data folder
+         when it starts the Kokoro server, so a single-file publish stays a single file. -->
+    <EmbeddedResource Include="Engines\kokoro_server.py" LogicalName="kokoro_server.py" />
   </ItemGroup>
 
 </Project>

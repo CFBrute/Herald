@@ -65,8 +65,29 @@ public class KokoroEngine : ITtsEngine, IDisposable
         _engineDir = Path.Combine(appDataDir, "engines", "kokoro");
         _venvDir = Path.Combine(_engineDir, "venv");
         _modelDir = Path.Combine(_engineDir, "models");
-        _serverScript = Path.Combine(AppContext.BaseDirectory, "Engines", "kokoro_server.py");
+        _serverScript = Path.Combine(_engineDir, "kokoro_server.py");
         Refresh();
+    }
+
+    /// <summary>
+    /// Writes the server script (embedded in Herald.exe) into the engine folder, replacing
+    /// any older copy so it always matches the running Herald.
+    /// </summary>
+    private bool WriteServerScript()
+    {
+        try
+        {
+            using var stream = typeof(KokoroEngine).Assembly.GetManifestResourceStream("kokoro_server.py");
+            if (stream == null) return false;
+            Directory.CreateDirectory(_engineDir);
+            using var file = File.Create(_serverScript);
+            stream.CopyTo(file);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public void Refresh()
@@ -78,7 +99,6 @@ public class KokoroEngine : ITtsEngine, IDisposable
         }
         if (!File.Exists(ModelPath)) missing.Add($"Model file {ModelFileName} (about 325 MB)");
         if (!File.Exists(VoicesPath)) missing.Add($"Voice file {VoicesFileName} (about 28 MB)");
-        if (!File.Exists(_serverScript)) missing.Add("Herald's kokoro_server.py (reinstall Herald)");
 
         _missingParts = missing;
         OnPropertyChanged(nameof(MissingParts));
@@ -162,6 +182,7 @@ public class KokoroEngine : ITtsEngine, IDisposable
         lock (_serverLock)
         {
             if (_server is { HasExited: false }) return;
+            if (!WriteServerScript()) return;
 
             try
             {
