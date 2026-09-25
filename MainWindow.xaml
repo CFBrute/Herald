@@ -105,7 +105,7 @@
             </Style.Triggers>
         </Style>
     </Window.Resources>
-    <Grid Margin="12">
+    <Grid x:Name="Root" Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>

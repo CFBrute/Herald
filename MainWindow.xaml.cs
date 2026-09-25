@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     public MainWindow(SpeechEngine engine, HookServer hookServer, HotkeySettingsStore hotkeySettings, ClaudeCodeIntegration claude)
     {
         InitializeComponent();
+        // Once the window handle exists its DPI is known, so the clamp to the screen's
+        // work area is right on high-scaling displays too.
+        SourceInitialized += (_, _) => this.FitToScreen();
 
         _engine = engine;
         _hookServer = hookServer;
@@ -45,6 +48,7 @@ public partial class MainWindow : Window
         // Enabled/SpeedPercent can also change via a global hotkey, which never goes
         // through HookServer - keep the GUI in sync regardless of which path fired.
         _engine.PropertyChanged += OnEnginePropertyChanged;
+        Root.ApplyUiScale(_engine.UiScalePercent);
 
         _tray = new TrayIcon();
         _tray.SetSpeechEnabled(_engine.Enabled);
@@ -168,6 +172,11 @@ public partial class MainWindow : Window
 
     private void OnEnginePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(SpeechEngine.UiScalePercent))
+        {
+            Dispatcher.BeginInvoke(() => Root.ApplyUiScale(_engine.UiScalePercent));
+            return;
+        }
         if (e.PropertyName != nameof(SpeechEngine.Enabled)) return;
 
         Dispatcher.BeginInvoke(() =>

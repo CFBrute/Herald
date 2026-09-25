@@ -31,6 +31,9 @@ public partial class SettingsWindow : Window
                           ClaudeCodeIntegration claude, HookServer hookServer, Action exitHerald)
     {
         InitializeComponent();
+        // Owner is assigned after construction, so fit to its screen once the window
+        // is about to appear.
+        SourceInitialized += (_, _) => this.FitToScreen();
 
         _claude = claude;
         _hookServer = hookServer;
@@ -48,6 +51,11 @@ public partial class SettingsWindow : Window
 
         DataContext = _senderSettings;
         GeneralTab.DataContext = engine;
+        Root.ApplyUiScale(engine.UiScalePercent);
+        engine.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SpeechEngine.UiScalePercent)) Dispatcher.BeginInvoke(() => Root.ApplyUiScale(engine.UiScalePercent));
+        };
         HotkeysGrid.ItemsSource = _hotkeySettings.Bindings;
         EngineCombo.ItemsSource = engine.Engines.All;
 

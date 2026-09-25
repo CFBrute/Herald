@@ -127,6 +127,24 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private int _uiScalePercent = 100;
+    /// <summary>
+    /// Size of everything inside Herald's windows, 70-130%. The Fluent theme's controls
+    /// are large on small high-DPI screens; this lets the user zoom the UI out (or in).
+    /// </summary>
+    public int UiScalePercent
+    {
+        get => _uiScalePercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 70, 130);
+            if (_uiScalePercent == clamped) return;
+            _uiScalePercent = clamped;
+            OnPropertyChanged(nameof(UiScalePercent));
+            SaveSettings();
+        }
+    }
+
     private int _volume = 100;
     /// <summary>
     /// Herald's own playback volume, 0-100%. Scales the audio Herald plays (all engines),
@@ -245,6 +263,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             _trayHintShown = dto.TrayHintShown ?? false;
             if (Enum.TryParse<ThemeChoice>(dto.Theme, out var theme)) _theme = theme;
             if (dto.Volume is { } volume) _volume = Math.Clamp(volume, 0, 100);
+            if (dto.UiScalePercent is { } scale) _uiScalePercent = Math.Clamp(scale, 70, 130);
         }
         catch
         {
@@ -257,7 +276,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         try
         {
             var dto = new EngineSettingsDto(_speedPercent, _chunkThreshold, _chunkTargetLength, _historyLimit, _askToConnectClaude,
-                                            _readClipboardAutomatically, _trayHintShown, _theme.ToString(), _volume);
+                                            _readClipboardAutomatically, _trayHintShown, _theme.ToString(), _volume,
+                                            _uiScalePercent);
             var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(_settingsFilePath, json);
         }
@@ -269,7 +289,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
 
     private record EngineSettingsDto(int SpeedPercent, int ChunkThreshold = 0, int ChunkTargetLength = 0, int HistoryLimit = 0,
                                      bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null,
-                                     bool? TrayHintShown = null, string? Theme = null, int? Volume = null);
+                                     bool? TrayHintShown = null, string? Theme = null, int? Volume = null,
+                                     int? UiScalePercent = null);
 
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
