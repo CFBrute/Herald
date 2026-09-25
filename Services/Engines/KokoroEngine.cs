@@ -199,7 +199,9 @@ public class KokoroEngine : ITtsEngine, IDisposable
         {
             try
             {
-                if (_server is { HasExited: false }) _server.Kill();
+                // The venv's pythonw.exe is a launcher that runs the real interpreter as a
+                // child; killing only the launcher would leave that child running.
+                if (_server is { HasExited: false }) _server.Kill(entireProcessTree: true);
             }
             catch { }
             _server = null;

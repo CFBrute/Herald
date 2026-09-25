@@ -273,7 +273,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
 
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
-                                  string? Language = null);
+                                  string? Language = null, string? SynthesisInfo = null);
 
     /// <summary>Restores History from the last session. Runs on the UI thread at startup.</summary>
     private void LoadHistory()
@@ -297,7 +297,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
                     PartIndex = dto.PartIndex,
                     PartCount = dto.PartCount,
                     IsCopy = dto.IsCopy,
-                    Language = dto.Language
+                    Language = dto.Language,
+                    SynthesisInfo = dto.SynthesisInfo
                 });
             }
         }
@@ -342,7 +343,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         {
             var dtos = History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
                                                               i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
-                                                              i.Language)).ToList();
+                                                              i.Language, i.SynthesisInfo)).ToList();
             File.WriteAllText(_historyFilePath, JsonSerializer.Serialize(dtos));
         }
         catch
@@ -536,6 +537,8 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             IsCopy = true,
             Band = NextBand(),
             Language = source.Language,
+            // The audio is reused, so the original voice and speed still apply.
+            SynthesisInfo = source.SynthesisInfo,
             GroupId = Guid.NewGuid(),
             PreparedAudioPath = source.AudioFilePath is { } path && File.Exists(path) ? path : null
         };
@@ -665,7 +668,10 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             : item.Text;
 
         var (engine, voiceId) = VoiceFor(item, senderSettings);
-        return engine.SynthesizeAsync(spokenText, voiceId, SpeedPercent / 100.0, outPath, _shutdownCts.Token);
+        var speed = SpeedPercent;
+        var voiceName = engine.Voices.FirstOrDefault(v => v.Id == voiceId)?.DisplayName ?? voiceId;
+        item.SynthesisInfo = $"Engine: {engine.DisplayName}\nVoice: {voiceName}\nSpeed: {speed}%";
+        return engine.SynthesizeAsync(spokenText, voiceId, speed / 100.0, outPath, _shutdownCts.Token);
     }
 
     /// <summary>

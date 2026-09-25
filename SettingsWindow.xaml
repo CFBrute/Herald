@@ -30,7 +30,7 @@
                         <Slider Minimum="100" Maximum="190" Width="220" TickFrequency="10" IsSnapToTickEnabled="True"
                                 Value="{Binding SpeedPercent}" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
-                        <TextBlock Text="Also on the main window and Alt+Shift+0-9" VerticalAlignment="Center"
+                        <TextBlock Text="Also via the Alt+Shift+0-9 hotkeys" VerticalAlignment="Center"
                                    Foreground="{DynamicResource SubtleText}"/>
                     </StackPanel>
 
@@ -301,6 +301,12 @@
                         <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Width="480"
                                    Text="Files Herald reads and writes. Open shows a file in its default editor (scripts always open in Notepad, so they can't run by accident)."/>
                         <Button Content="Refresh" Width="70" Margin="10,0,0,0" Click="RefreshFiles_Click"/>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="Clean up..." Padding="12,2" Click="Cleanup_Click"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap" Width="480"
+                                   Foreground="{DynamicResource SubtleText}"
+                                   Text="Remove what Herald has created on this PC: its data folder, the Claude Code hook, the start-with-Windows entry. You choose what goes."/>
                     </StackPanel>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="FilesList">

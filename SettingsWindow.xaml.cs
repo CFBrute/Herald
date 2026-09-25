@@ -20,16 +20,21 @@ public partial class SettingsWindow : Window
     private readonly HotkeySettingsStore _hotkeySettings;
     private readonly HotkeyManager _hotkeyManager;
     private readonly ClaudeCodeIntegration _claude;
+    private readonly HookServer _hookServer;
+    private readonly Action _exitHerald;
 
     // Set while the pickers are filled from code, so their SelectionChanged handlers
     // don't write half-updated values back to the sender.
     private bool _updatingPickers;
 
-    public SettingsWindow(SpeechEngine engine, HotkeySettingsStore hotkeySettings, HotkeyManager hotkeyManager, ClaudeCodeIntegration claude)
+    public SettingsWindow(SpeechEngine engine, HotkeySettingsStore hotkeySettings, HotkeyManager hotkeyManager,
+                          ClaudeCodeIntegration claude, HookServer hookServer, Action exitHerald)
     {
         InitializeComponent();
 
         _claude = claude;
+        _hookServer = hookServer;
+        _exitHerald = exitHerald;
         StartWithWindowsBox.IsChecked = StartupRegistration.IsEnabled;
         ThemeCombo.SelectedItem = ThemeCombo.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == engine.Theme.ToString());
         ClaudeTab.DataContext = engine;
@@ -434,6 +439,12 @@ public partial class SettingsWindow : Window
     }
 
     private void RefreshFiles_Click(object sender, RoutedEventArgs e) => RefreshFiles();
+
+    private void Cleanup_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new CleanupWindow(_engine, _hookServer, _claude, _exitHerald) { Owner = this };
+        dialog.ShowDialog();
+    }
 
     private void OpenFile_Click(object sender, RoutedEventArgs e)
     {

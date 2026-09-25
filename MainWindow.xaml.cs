@@ -35,14 +35,12 @@ public partial class MainWindow : Window
         DataContext = _engine;
         ContentRendered += (_, _) => OfferClaudeConnection();
 
-        SpeedSlider.Value = _engine.SpeedPercent;
         EnabledToggle.IsChecked = _engine.Enabled;
         UpdateEnabledButton();
 
         _hotkeyManager = new HotkeyManager(this, _engine, _hotkeySettings);
         var clipboardWatcher = new ClipboardWatcher(this, _engine);
 
-        _hookServer.CommandReceived += OnCommandReceived;
         _hookServer.ShowRequested += () => Dispatcher.BeginInvoke(BringToFront);
         // Enabled/SpeedPercent can also change via a global hotkey, which never goes
         // through HookServer - keep the GUI in sync regardless of which path fired.
@@ -102,7 +100,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_engine, _hotkeySettings, _hotkeyManager, _claude) { Owner = this };
+        _settingsWindow = new SettingsWindow(_engine, _hotkeySettings, _hotkeyManager, _claude, _hookServer, ExitHerald) { Owner = this };
         try
         {
             _settingsWindow.ShowDialog();
@@ -168,23 +166,13 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private void OnCommandReceived(string type)
-    {
-        Dispatcher.BeginInvoke(() =>
-        {
-            LastCommandText.Text = $"Last command: {type} at {DateTime.Now:T}";
-        });
-    }
-
     private void OnEnginePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(SpeechEngine.Enabled) && e.PropertyName != nameof(SpeechEngine.SpeedPercent)) return;
+        if (e.PropertyName != nameof(SpeechEngine.Enabled)) return;
 
         Dispatcher.BeginInvoke(() =>
         {
             EnabledToggle.IsChecked = _engine.Enabled;
-            SpeedSlider.Value = _engine.SpeedPercent;
-            SpeedLabel.Text = $"{_engine.SpeedPercent}%";
             UpdateEnabledButton();
             _tray.SetSpeechEnabled(_engine.Enabled);
         });
@@ -210,16 +198,6 @@ public partial class MainWindow : Window
     private void SkipMessageButton_Click(object sender, RoutedEventArgs e)
     {
         _engine.SkipMessage();
-    }
-
-    private void SpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        // Fires during InitializeComponent() (Slider min/max coercion) before the constructor
-        // has assigned _engine - ignore those spurious early events.
-        if (_engine == null) return;
-
-        _engine.SpeedPercent = (int)e.NewValue;
-        SpeedLabel.Text = $"{_engine.SpeedPercent}%";
     }
 
     private void HistoryList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

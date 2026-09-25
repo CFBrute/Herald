@@ -40,6 +40,22 @@ public class QueueItem : INotifyPropertyChanged
     /// <summary>Name of the language profile detected for this part, or null.</summary>
     public string? Language { get; init; }
 
+    private string? _synthesisInfo;
+    /// <summary>
+    /// Which engine, voice and speed made this part's audio - shown as the item's tooltip.
+    /// Set when synthesis starts; null until then.
+    /// </summary>
+    public string? SynthesisInfo
+    {
+        get => _synthesisInfo;
+        set
+        {
+            if (_synthesisInfo == value) return;
+            _synthesisInfo = value;
+            OnPropertyChanged(nameof(SynthesisInfo));
+        }
+    }
+
     /// <summary>
     /// 0 or 1, alternating per message, so the lists can shade whole messages (all their
     /// parts together) in alternating backgrounds.

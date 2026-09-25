@@ -1,0 +1,26 @@
+<Window x:Class="Herald.CleanupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Clean up Herald's files" Width="560" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Foreground="{DynamicResource PrimaryText}">
+    <StackPanel Margin="16">
+        <TextBlock TextWrapping="Wrap"
+                   Text="Removes what Herald has created on this PC. Tick what to remove. This cannot be undone, and Herald closes when it's done (otherwise it would recreate its settings)."/>
+
+        <CheckBox x:Name="ClaudeHookBox" Margin="0,14,0,2" IsChecked="True"/>
+        <CheckBox x:Name="ClaudeBackupBox" Margin="20,0,0,2" IsChecked="True"/>
+        <CheckBox x:Name="StartupBox" Margin="0,8,0,2" IsChecked="True"/>
+        <CheckBox x:Name="HistoryBox" Margin="0,8,0,2" IsChecked="True"/>
+        <CheckBox x:Name="EnginesBox" Margin="0,8,0,2" IsChecked="True"/>
+        <CheckBox x:Name="SettingsBox" Margin="0,8,0,2" IsChecked="True"/>
+        <CheckBox x:Name="LogsBox" Margin="0,8,0,2" IsChecked="True"/>
+
+        <TextBlock x:Name="DataFolderText" Foreground="{DynamicResource SubtleText}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="RemoveButton" Content="Remove selected and close Herald" Padding="12,4" Click="Remove_Click"/>
+            <Button Content="Cancel" Width="80" Margin="8,0,0,0" IsCancel="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
