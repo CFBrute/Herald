@@ -96,7 +96,7 @@ public class BuildInfoTests
     [Fact]
     public void Herald_is_stamped_with_this_version()
     {
-        Assert.StartsWith("0.91.", BuildInfo.Version);
+        Assert.StartsWith("1.0.", BuildInfo.Version);
         Assert.Matches(@"^[0-9a-f]{7}\*?$", BuildInfo.Commit);
         Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$", BuildInfo.BuildTime);
     }

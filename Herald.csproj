@@ -12,28 +12,36 @@
     <ApplicationIcon>Assets\Herald.ico</ApplicationIcon>
     <!-- The test project lives in a subfolder; keep its files out of Herald itself. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);Herald.Tests\**</DefaultItemExcludes>
+    <!-- A single-file publish carries ONNX Runtime's native DLL (Kokoro) inside the exe too;
+         it's unpacked to a temp folder when Herald starts. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Bumped by hand for a new version; the third number is the git commit count,
          filled in by StampBuildVersion below. -->
-    <VersionPrefix>0.91</VersionPrefix>
+    <VersionPrefix>1.0</VersionPrefix>
     <!-- The version text is built below, with the short commit instead of the full one. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
-  <!-- Stamps the version (0.91.<commit count>), the commit it was built from (with "*" when
+  <!-- ONNX Runtime's package also ships .lib files for C++ projects; Herald doesn't use them,
+       and without this they'd sit next to the single-file exe. -->
+  <Target Name="LeaveOutImportLibraries" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.lib'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Stamps the version (1.0.<commit count>), the commit it was built from (with "*" when
        there were uncommitted changes) and the build time into Herald.exe, shown in the
-       main window. Without git the version is 0.91.0 and there is no commit. -->
+       main window. Without git the version is 1.0.0 and there is no commit. -->
   <Target Name="StampBuildVersion" BeforeTargets="GetAssemblyVersion">
-    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true"
-          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="ConsoleOutput" PropertyName="HeraldCommitCount" />
       <Output TaskParameter="ExitCode" PropertyName="HeraldGitExitCode" />
     </Exec>
-    <Exec Command="git rev-parse --short=7 HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'"
-          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+    <Exec Command="git rev-parse --short=7 HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'" StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="ConsoleOutput" PropertyName="HeraldCommit" />
     </Exec>
-    <Exec Command="git status --porcelain" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'"
-          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+    <Exec Command="git status --porcelain" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'" StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
       <Output TaskParameter="ConsoleOutput" PropertyName="HeraldGitChanges" />
     </Exec>
     <PropertyGroup>
@@ -65,13 +73,13 @@
 
   <ItemGroup>
     <PackageReference Include="Markdig" Version="1.4.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
     <PackageReference Include="NAudio" Version="3.1.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Embedded, not a loose file next to the exe: Herald writes it to its data folder
-         when it starts the Kokoro server, so a single-file publish stays a single file. -->
-    <EmbeddedResource Include="Engines\kokoro_server.py" LogicalName="kokoro_server.py" />
+    <!-- The phonemes Kokoro knows, from kokoro-onnx's config.json. -->
+    <EmbeddedResource Include="Services\Engines\Kokoro\kokoro-vocab.json" LogicalName="kokoro-vocab.json" />
   </ItemGroup>
 
 </Project>

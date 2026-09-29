@@ -399,8 +399,9 @@ public partial class SettingsWindow : Window
     {
         var confirm = MessageBox.Show(this,
             "This installs Kokoro into Herald's own folder:\n\n" +
-            "- a private Python environment with kokoro-onnx (about 150 MB, needs Python 3.10+ already installed)\n" +
-            "- the Kokoro model and voice files (about 350 MB, downloaded from GitHub unless found locally)\n\n" +
+            "- the Kokoro model and voice files (about 350 MB, downloaded from GitHub unless found locally)\n" +
+            "- espeak-ng for pronunciation (about 20 MB, downloaded from PyPI, the Python package index, and checked against its known checksum)\n\n" +
+            "No Python is needed.\n\n" +
             "Continue?",
             "Install Kokoro", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.Yes) return;

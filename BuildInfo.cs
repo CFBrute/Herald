@@ -15,7 +15,7 @@ public static class BuildInfo
     private static readonly (string Version, string Commit) Parts =
         Split(Herald.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
 
-    /// <summary>Like "0.91.11".</summary>
+    /// <summary>Like "1.0.14".</summary>
     public static string Version => Parts.Version;
 
     /// <summary>Short commit the build came from, with "*" if it had uncommitted changes; empty without git.</summary>
@@ -25,13 +25,13 @@ public static class BuildInfo
     public static string BuildTime =>
         Herald.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "BuildTime")?.Value ?? string.Empty;
 
-    /// <summary>Shown in the main window: "v0.91.11 · 29f2105".</summary>
+    /// <summary>Shown in the main window: "v1.0.14 · 29f2105".</summary>
     public static string Label => Describe(Version, Commit);
 
     /// <summary>The label's tooltip: when the build was made, and what a "*" means.</summary>
     public static string Details => Explain(Commit, BuildTime);
 
-    /// <summary>"0.91.11+29f2105*" into its version and commit.</summary>
+    /// <summary>"1.0.14+29f2105*" into its version and commit.</summary>
     public static (string Version, string Commit) Split(string? informational)
     {
         if (string.IsNullOrEmpty(informational)) return ("0.0.0", string.Empty);

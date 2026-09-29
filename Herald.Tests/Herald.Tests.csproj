@@ -25,6 +25,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- What the Python Kokoro pipeline made of a set of texts (tools/kokoro_reference.py). -->
+    <None Include="TestData\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Herald.csproj" />
   </ItemGroup>
 

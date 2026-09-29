@@ -52,7 +52,7 @@ public partial class App : Application
                                     speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
 
         // Loading the Kokoro model takes a few seconds; start now so the first message doesn't wait.
-        engines.Kokoro.StartServerIfReady();
+        engines.Kokoro.WarmUp();
         hookServer.Start();
 
         // Herald keeps running in the tray when its window is closed; only Exit in the
