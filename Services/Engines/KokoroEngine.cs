@@ -1,50 +1,56 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
-using System.Net.Sockets;
-using System.Text;
-using System.Text.Json;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Herald.Models;
+using Herald.Services.Engines.Kokoro;
 
 namespace Herald.Services.Engines;
 
 /// <summary>
-/// Local neural voices via kokoro-onnx, run by a Python server that Herald starts.
-/// Nothing is installed until the user clicks Install: that creates a private Python
-/// environment and downloads the model files into Herald's own app-data folder.
+/// Local neural voices: the Kokoro model run inside Herald (ONNX Runtime), with espeak-ng
+/// for pronunciation. Nothing is installed until the user clicks Install: that downloads
+/// the model files and espeak-ng into Herald's own app-data folder.
 /// </summary>
 public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
 {
-    private const int Port = 8767;
     private const string ModelFileName = "kokoro-v1.0.onnx";
     private const string VoicesFileName = "voices-v1.0.bin";
-    // Pinned to the versions kokoro_server.py was tested with: kokoro-onnx changes behaviour
-    // between versions (speed limits, pauses). Their own dependencies stay unpinned, since
-    // fixed versions of those may have no download for a newer Python.
-    public const string KokoroOnnxPackage = "kokoro-onnx==0.6.1";
-    public const string SoundfilePackage = "soundfile==0.14.0";
-    private const string ReleaseBaseUrl ="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/";
+    private const string ReleaseBaseUrl = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/";
+
+    // espeak-ng exactly as the Python version used it: the espeakng-loader 0.2.4 package,
+    // which is a plain zip holding espeak-ng.dll and its data. Checked against its hash.
+    private const string EspeakPackageUrl =
+        "https://files.pythonhosted.org/packages/9d/ed/a3d872fbad4f3a3f3db0e8c31768ab14e77cd77306de16b8b20b1e1df7ea/espeakng_loader-0.2.4-py3-none-win_amd64.whl";
+    private const string EspeakPackageSha256 = "41f1e08ac9deda2efd1ea9de0b81dab9f5ae3c4b24284f76533d0a7b1dd7abd7";
 
     private readonly string _engineDir;
-    private readonly string _venvDir;
     private readonly string _modelDir;
-    private readonly string _serverScript;
-    private readonly object _serverLock = new();
-    private Process? _server;
+    private readonly string _espeakDir;
+    private readonly AppLog? _log;
+    // Guards the model: loading it, counting the syntheses using it, and freeing it only
+    // once none is (freeing it mid-synthesis would crash Herald on exit).
+    private readonly Lock _loadLock = new();
+    private KokoroSynthesizer? _synthesizer;
+    private string? _loadError;
+    private int _running;
+    private bool _disposed;
 
     public string Id => "kokoro";
     public string DisplayName => "Kokoro (local neural voices)";
     public string Description =>
-        "Natural-sounding voices that run on this PC. Needs Python 3.10+, a private Python environment (about 150 MB) and model files (about 350 MB). English, Spanish, French, Italian, Portuguese, Hindi, Japanese and Chinese; no Swedish.";
+        "Natural-sounding voices that run on this PC. Needs model files (about 350 MB) and espeak-ng for pronunciation (about 20 MB). English, Spanish, French, Italian, Portuguese, Hindi, Japanese and Chinese; no Swedish.";
 
-    private string VenvPython => Path.Combine(_venvDir, "Scripts", "python.exe");
-    private string VenvPythonW => Path.Combine(_venvDir, "Scripts", "pythonw.exe");
     private string ModelPath => Path.Combine(_modelDir, ModelFileName);
     private string VoicesPath => Path.Combine(_modelDir, VoicesFileName);
+
+    /// <summary>The Python environment earlier versions of Herald ran Kokoro in; only its espeak-ng is still of use.</summary>
+    public string OldPythonDir => Path.Combine(_engineDir, "venv");
+    private string OldPythonEspeakDir => Path.Combine(OldPythonDir, "Lib", "site-packages", "espeakng_loader");
 
     private IReadOnlyList<string> _missingParts = [];
     public IReadOnlyList<string> MissingParts => _missingParts;
@@ -60,203 +66,139 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
     public IReadOnlyList<VoiceInfo> Voices { get; } = BuildVoiceList();
     public string DefaultVoiceId => "am_michael";
 
-    private readonly AppLog? _log;
-
     public KokoroEngine(string enginesDir, AppLog? log = null)
     {
         _log = log;
         _engineDir = Path.Combine(enginesDir, "kokoro");
-        _venvDir = Path.Combine(_engineDir, "venv");
         _modelDir = Path.Combine(_engineDir, "models");
-        _serverScript = Path.Combine(_engineDir, "kokoro_server.py");
+        _espeakDir = Path.Combine(_engineDir, "espeak");
+        AdoptOldEspeak();
         Refresh();
     }
 
     /// <summary>
-    /// Writes the server script (embedded in Herald.exe) into the engine folder, replacing
-    /// any older copy so it always matches the running Herald.
+    /// An earlier Herald installed espeak-ng inside its Python environment: copy it over
+    /// once, so Kokoro keeps working after the update without installing anything.
     /// </summary>
-    private bool WriteServerScript()
+    private void AdoptOldEspeak()
     {
+        if (EspeakNg.IsInstalledIn(_espeakDir) || !EspeakNg.IsInstalledIn(OldPythonEspeakDir)) return;
         try
         {
-            using var stream = typeof(KokoroEngine).Assembly.GetManifestResourceStream("kokoro_server.py");
-            if (stream == null) return false;
-            Directory.CreateDirectory(_engineDir);
-            using var file = File.Create(_serverScript);
-            stream.CopyTo(file);
-            return true;
+            CopyEspeak(OldPythonEspeakDir, _espeakDir);
+            _log?.Write("kokoro", $"Took espeak-ng over from the old Python environment ({OldPythonEspeakDir})");
         }
         catch (Exception ex)
         {
-            _log?.Write("kokoro", $"Couldn't write the server script to {_serverScript}", ex);
-            return false;
+            _log?.Write("kokoro", "Couldn't take espeak-ng over from the old Python environment", ex);
         }
     }
 
+    private static void CopyEspeak(string from, string to)
+    {
+        var partial = to + ".part";
+        if (Directory.Exists(partial)) Directory.Delete(partial, recursive: true);
+        Directory.CreateDirectory(partial);
+        File.Copy(Path.Combine(from, "espeak-ng.dll"), Path.Combine(partial, "espeak-ng.dll"));
+        CopyFolder(Path.Combine(from, "espeak-ng-data"), Path.Combine(partial, "espeak-ng-data"));
+        Directory.Move(partial, to);
+    }
+
+    private static void CopyFolder(string from, string to)
+    {
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.GetFiles(from)) File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+        foreach (var folder in Directory.GetDirectories(from)) CopyFolder(folder, Path.Combine(to, Path.GetFileName(folder)));
+    }
+
+    /// <summary>Checks the files again; a model that failed to load gets another try.</summary>
     public void Refresh()
     {
+        lock (_loadLock) _loadError = null;
+        UpdateMissingParts();
+    }
+
+    private void UpdateMissingParts()
+    {
         var missing = new List<string>();
-        if (!File.Exists(VenvPython) || !Directory.Exists(Path.Combine(_venvDir, "Lib", "site-packages", "kokoro_onnx")))
-        {
-            missing.Add("Python environment with kokoro-onnx");
-        }
         if (!File.Exists(ModelPath)) missing.Add($"Model file {ModelFileName} (about 325 MB)");
         if (!File.Exists(VoicesPath)) missing.Add($"Voice file {VoicesFileName} (about 28 MB)");
+        if (!EspeakNg.IsInstalledIn(_espeakDir)) missing.Add("espeak-ng (about 20 MB)");
+        // Not ready, so messages fall back to the Windows voice instead of failing one by one.
+        if (_loadError is { } error) missing.Add($"A working model: it couldn't be loaded ({error}); Install again, or see the Herald log");
 
         _missingParts = missing;
         OnPropertyChanged(nameof(MissingParts));
         OnPropertyChanged(nameof(IsReady));
     }
 
-    public void StartServerIfReady()
+    /// <summary>Loads the model in the background, so the first message doesn't wait for it.</summary>
+    public void WarmUp()
     {
-        if (IsReady) EnsureServerStarted();
+        if (IsReady) Task.Run(() => Synthesizer());
     }
 
-    public async Task<bool> SynthesizeAsync(string text, string voiceId, double speed, string outPath, CancellationToken ct)
+    /// <summary>
+    /// The loaded model, loading it the first time (a few seconds). Null if that fails;
+    /// then Kokoro reports why and counts as not ready until <see cref="Refresh"/>.
+    /// </summary>
+    private KokoroSynthesizer? Synthesizer()
     {
-        if (!IsReady) return false;
-
-        EnsureServerStarted();
-
-        // The model takes a few seconds to load after the server starts.
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (true)
+        bool failed;
+        lock (_loadLock)
         {
-            var result = await TrySynthesizeAsync(text, voiceId, speed, outPath, ct);
-            if (result == SynthResult.Ok) return true;
-            if (result == SynthResult.Failed) return false;
-            if (result == SynthResult.TimedOut)
-            {
-                _log?.Write("kokoro", $"No answer within 30 s for {AppLog.Excerpt(text)}; restarting the server");
-                RestartServer();
-                return false;
-            }
-            if (ct.IsCancellationRequested) return false;
-            if (DateTime.UtcNow > deadline)
-            {
-                _log?.Write("kokoro", $"The server didn't start listening on port {Port} within 20 s; {AppLog.Excerpt(text)} not spoken");
-                return false;
-            }
-            await Task.Delay(250, ct);
-        }
-    }
-
-    private enum SynthResult { Ok, Failed, NotListening, TimedOut }
-
-    private async Task<SynthResult> TrySynthesizeAsync(string text, string voiceId, double speed, string outPath, CancellationToken ct)
-    {
-        try
-        {
-            using var client = new TcpClient();
-            var connectTask = client.ConnectAsync("127.0.0.1", Port, ct).AsTask();
-            if (await Task.WhenAny(connectTask, Task.Delay(300, ct)) != connectTask || !client.Connected)
-            {
-                return SynthResult.NotListening;
-            }
-
-            using var stream = client.GetStream();
-            var request = JsonSerializer.Serialize(new
-            {
-                text,
-                voice = voiceId,
-                speed,
-                lang = LanguageCodeFor(voiceId),
-                @out = outPath
-            });
-            await stream.WriteAsync(Encoding.UTF8.GetBytes(request + "\n"), ct);
-
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var readTask = reader.ReadLineAsync(ct).AsTask();
-            if (await Task.WhenAny(readTask, Task.Delay(30000, ct)) != readTask)
-            {
-                return SynthResult.TimedOut;
-            }
-
-            var response = readTask.Result;
-            if (response != null && response.Contains("\"status\":\"ok\"")) return SynthResult.Ok;
-
-            // The server's answer says why, e.g. {"status":"error","message":"..."}.
-            _log?.Write("kokoro", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}: {response ?? "no answer"}");
-            return SynthResult.Failed;
-        }
-        catch (SocketException)
-        {
-            return SynthResult.NotListening;
-        }
-        catch (OperationCanceledException)
-        {
-            return SynthResult.Failed;
-        }
-        catch (Exception ex)
-        {
-            _log?.Write("kokoro", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}", ex);
-            return SynthResult.Failed;
-        }
-    }
-
-    private void EnsureServerStarted()
-    {
-        lock (_serverLock)
-        {
-            if (_server is { HasExited: false }) return;
-            if (!WriteServerScript()) return;
-
+            if (_synthesizer != null || _disposed || _loadError != null) return _synthesizer;
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = File.Exists(VenvPythonW) ? VenvPythonW : VenvPython,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    // The server reports its progress and any Python error here.
-                    RedirectStandardError = _log != null
-                };
-                psi.ArgumentList.Add(_serverScript);
-                psi.ArgumentList.Add("--model");
-                psi.ArgumentList.Add(ModelPath);
-                psi.ArgumentList.Add("--voices");
-                psi.ArgumentList.Add(VoicesPath);
-                psi.ArgumentList.Add("--port");
-                psi.ArgumentList.Add(Port.ToString());
-                _server = Process.Start(psi);
-                if (_server != null && _log != null)
-                {
-                    _server.ErrorDataReceived += (_, e) =>
-                    {
-                        if (!string.IsNullOrWhiteSpace(e.Data)) _log.Write("kokoro-server", e.Data);
-                    };
-                    _server.BeginErrorReadLine();
-                }
+                var espeak = EspeakNg.Open(Path.Combine(_espeakDir, "espeak-ng.dll"), Path.Combine(_espeakDir, "espeak-ng-data"));
+                var phonemizer = new KokoroPhonemizer(espeak.TextToPhonemes, KokoroVocabulary.Tokens);
+                _synthesizer = new KokoroSynthesizer(ModelPath, VoicesPath, phonemizer, KokoroVocabulary.Tokens);
+                _log?.Write("kokoro", "Model loaded");
+                return _synthesizer;
             }
             catch (Exception ex)
             {
-                _log?.Write("kokoro", "Couldn't start the Kokoro server", ex);
-                _server = null;
+                _loadError = ex.Message;
+                _log?.Write("kokoro", "Couldn't load the Kokoro model", ex);
+                failed = true;
             }
         }
+        if (failed) UpdateMissingParts();
+        return null;
     }
 
-    private void RestartServer()
+    public Task<bool> SynthesizeAsync(string text, string voiceId, double speed, string outPath, CancellationToken ct)
     {
-        StopServer();
-        EnsureServerStarted();
-    }
+        if (!IsReady || ct.IsCancellationRequested) return Task.FromResult(false);
 
-    private void StopServer()
-    {
-        lock (_serverLock)
+        // Not given the token: a cancelled synthesis says "not spoken" instead of throwing.
+        return Task.Run(() =>
         {
+            if (ct.IsCancellationRequested || Synthesizer() is not { } kokoro) return false;
+            lock (_loadLock)
+            {
+                if (_disposed) return false;
+                _running++;
+            }
             try
             {
-                // The venv's pythonw.exe is a launcher that runs the real interpreter as a
-                // child; killing only the launcher would leave that child running.
-                if (_server is { HasExited: false }) _server.Kill(entireProcessTree: true);
+                KokoroAudio.WriteWav(outPath, kokoro.Speak(text, voiceId, LanguageCodeFor(voiceId), speed));
+                return true;
             }
-            catch { }
-            _server = null;
-        }
+            catch (Exception ex)
+            {
+                _log?.Write("kokoro", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}", ex);
+                return false;
+            }
+            finally
+            {
+                lock (_loadLock)
+                {
+                    // The last synthesis after Dispose frees the model.
+                    if (--_running == 0 && _disposed) _synthesizer?.Dispose();
+                }
+            }
+        });
     }
 
     /// <summary>
@@ -269,37 +211,13 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
         IsInstalling = true;
         try
         {
-            Directory.CreateDirectory(_engineDir);
             Directory.CreateDirectory(_modelDir);
-
-            if (!File.Exists(VenvPython))
-            {
-                var basePython = await FindBasePythonAsync(log, ct);
-                if (basePython == null)
-                {
-                    log.Report("Python 3.10 or newer was not found. Install it from python.org (or run: winget install Python.Python.3.12), then click Install again.");
-                    return false;
-                }
-
-                log.Report($"Creating a private Python environment using {basePython} ...");
-                if (await RunAsync(basePython, ["-m", "venv", _venvDir], log, ct) != 0 || !File.Exists(VenvPython))
-                {
-                    log.Report("Creating the Python environment failed.");
-                    return false;
-                }
-            }
-
-            log.Report($"Installing {KokoroOnnxPackage} and {SoundfilePackage} (this can take a few minutes) ...");
-            if (await RunAsync(VenvPython, ["-m", "pip", "install", "--disable-pip-version-check", KokoroOnnxPackage, SoundfilePackage], log, ct) != 0)
-            {
-                log.Report("Installing the Python packages failed.");
-                return false;
-            }
 
             foreach (var fileName in new[] { ModelFileName, VoicesFileName })
             {
                 if (!await EnsureModelFileAsync(fileName, log, ct)) return false;
             }
+            if (!await EnsureEspeakAsync(log, ct)) return false;
 
             Refresh();
             if (!IsReady)
@@ -308,8 +226,12 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
                 return false;
             }
 
-            log.Report("Kokoro is installed. Starting the voice server ...");
-            RestartServer();
+            log.Report("Kokoro is installed. Loading the model ...");
+            if (await Task.Run(Synthesizer, ct) == null)
+            {
+                log.Report("The model didn't load; the Herald log says why.");
+                return false;
+            }
             log.Report("Done.");
             return true;
         }
@@ -321,6 +243,7 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
         catch (Exception ex)
         {
             log.Report("Installation failed: " + ex.Message);
+            _log?.Write("kokoro", "Installation failed", ex);
             return false;
         }
         finally
@@ -351,81 +274,46 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
         return await Downloader.DownloadAsync(ReleaseBaseUrl + fileName, target, fileName, log, ct);
     }
 
-    private static async Task<string?> FindBasePythonAsync(IProgress<string> log, CancellationToken ct)
+    private async Task<bool> EnsureEspeakAsync(IProgress<string> log, CancellationToken ct)
     {
-        var candidates = new List<string>();
-
-        var launcher = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "py.exe");
-        if (File.Exists(launcher))
+        if (EspeakNg.IsInstalledIn(_espeakDir))
         {
-            var fromLauncher = await CaptureAsync(launcher, ["-3", "-c", "import sys; print(sys.executable)"], ct);
-            if (!string.IsNullOrWhiteSpace(fromLauncher)) candidates.Add(fromLauncher.Trim());
+            log.Report("espeak-ng already present.");
+            return true;
+        }
+        if (EspeakNg.IsInstalledIn(OldPythonEspeakDir))
+        {
+            log.Report("Copying espeak-ng from the old Python environment ...");
+            CopyEspeak(OldPythonEspeakDir, _espeakDir);
+            return true;
         }
 
-        var programs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Python");
-        if (Directory.Exists(programs))
-        {
-            candidates.AddRange(Directory.GetDirectories(programs, "Python3*")
-                .OrderByDescending(d => d)
-                .Select(d => Path.Combine(d, "python.exe"))
-                .Where(File.Exists));
-        }
-
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries))
-        {
-            // The WindowsApps "python.exe" is only a shortcut that opens the Microsoft Store.
-            if (dir.Contains("WindowsApps", StringComparison.OrdinalIgnoreCase)) continue;
-            var exe = Path.Combine(dir.Trim(), "python.exe");
-            if (File.Exists(exe)) candidates.Add(exe);
-        }
-
-        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var ok = await CaptureAsync(candidate, ["-c", "import sys; print(sys.version_info >= (3, 10))"], ct);
-            if (ok?.Trim() == "True") return candidate;
-            log.Report($"Skipping {candidate} (needs Python 3.10 or newer).");
-        }
-
-        return null;
-    }
-
-    private static async Task<string?> CaptureAsync(string exe, string[] args, CancellationToken ct)
-    {
+        Directory.CreateDirectory(_engineDir);
+        var package = Path.Combine(_engineDir, "espeakng_loader.zip");
+        if (!await Downloader.DownloadAsync(EspeakPackageUrl, package, "espeak-ng", log, ct)) return false;
         try
         {
-            var psi = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
-            foreach (var a in args) psi.ArgumentList.Add(a);
-            using var p = Process.Start(psi);
-            if (p == null) return null;
-            var output = await p.StandardOutput.ReadToEndAsync(ct);
-            await p.WaitForExitAsync(ct);
-            return p.ExitCode == 0 ? output : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
+            string hash;
+            await using (var file = File.OpenRead(package)) hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, ct));
+            if (hash != EspeakPackageSha256)
+            {
+                log.Report("The espeak-ng download isn't the expected file (its checksum differs); not installing it.");
+                _log?.Write("kokoro", $"espeak-ng download has SHA-256 {hash}, expected {EspeakPackageSha256}");
+                return false;
+            }
 
-    private static async Task<int> RunAsync(string exe, string[] args, IProgress<string> log, CancellationToken ct)
-    {
-        var psi = new ProcessStartInfo(exe)
+            log.Report("Unpacking espeak-ng ...");
+            var unpacked = _espeakDir + ".unpacked";
+            if (Directory.Exists(unpacked)) Directory.Delete(unpacked, recursive: true);
+            ZipFile.ExtractToDirectory(package, unpacked);
+            CopyEspeak(Path.Combine(unpacked, "espeakng_loader"), _espeakDir);
+            Directory.Delete(unpacked, recursive: true);
+            return true;
+        }
+        finally
         {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-        foreach (var a in args) psi.ArgumentList.Add(a);
-
-        using var p = new Process { StartInfo = psi };
-        p.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) log.Report("  " + e.Data); };
-        p.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) log.Report("  " + e.Data); };
-        p.Start();
-        p.BeginOutputReadLine();
-        p.BeginErrorReadLine();
-        await p.WaitForExitAsync(ct);
-        return p.ExitCode;
+            File.Delete(package);
+        }
     }
 
     private static readonly Dictionary<char, (string Code, string Name)> Languages = new()
@@ -472,5 +360,14 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
         ];
     }
 
-    public void Dispose() => StopServer();
+    /// <summary>Frees the model now, or when the synthesis still using it finishes.</summary>
+    public void Dispose()
+    {
+        lock (_loadLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (_running == 0) _synthesizer?.Dispose();
+        }
+    }
 }
