@@ -47,11 +47,11 @@ public sealed class KokoroPhonemizer
             .Select(line => line.Trim('\r', '\n'))
             .Where(line => line.Trim().Length > 0)
             .ToList();
-        if (lines.Count == 0) return string.Empty;
+        if (lines.Count == 0) return String.Empty;
 
         var (chunks, marks) = Preserve(lines);
         var phonemized = chunks.Select(chunk => CleanUp(_textToPhonemes(chunk, language))).ToList();
-        return string.Join(LineSeparator, Restore(phonemized, marks));
+        return String.Join(LineSeparator, Restore(phonemized, marks));
     }
 
     private record struct Mark(int Line, string Text, char Position);
@@ -96,7 +96,7 @@ public sealed class KokoroPhonemizer
                 if (at < 0)
                 {
                     chunks.Add(line);
-                    line = string.Empty;
+                    line = String.Empty;
                     continue;
                 }
                 chunks.Add(line[..at]);
@@ -116,7 +116,7 @@ public sealed class KokoroPhonemizer
     {
         line = line.Trim().Replace("\n", " ").Replace("  ", " ");
         line = Underscores.Replace(line, "_").Replace("_ ", " ");
-        if (line.Length == 0) return string.Empty;
+        if (line.Length == 0) return String.Empty;
 
         var output = new StringBuilder();
         foreach (var word in line.Split(' ')) output.Append(word.Trim().Replace("_", "")).Append(' ');
@@ -140,7 +140,7 @@ public sealed class KokoroPhonemizer
             }
             else if (text.Count == 0)
             {
-                punctuated.Add(string.Concat(remaining.Select(m => m.Text)));
+                punctuated.Add(String.Concat(remaining.Select(m => m.Text)));
                 remaining.Clear();
             }
             else if (remaining.Peek().Line == position)

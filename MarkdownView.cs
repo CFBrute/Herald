@@ -44,7 +44,7 @@ public class MarkdownView : ContentControl
     }
 
     private void Render() =>
-        Content = string.IsNullOrEmpty(Text) ? null : Blocks(Markdown.Parse(Text, Pipeline), spacing: 4);
+        Content = String.IsNullOrEmpty(Text) ? null : Blocks(Markdown.Parse(Text, Pipeline), spacing: 4);
 
     private static StackPanel Blocks(Md.ContainerBlock container, double spacing)
     {
@@ -145,7 +145,7 @@ public class MarkdownView : ContentControl
     private static StackPanel List(Md.ListBlock list)
     {
         var panel = new StackPanel();
-        var number = int.TryParse(list.OrderedStart, out var start) ? start : 1;
+        var number = Int32.TryParse(list.OrderedStart, out var start) ? start : 1;
         foreach (var item in list.OfType<Md.ListItemBlock>())
         {
             var marker = new TextBlock

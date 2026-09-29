@@ -193,8 +193,8 @@ public class SenderSettingsTests
         var sender = new SenderSettings("x") { EngineId = null!, VoiceId = null!, FilterCharacters = null!, LanguageRules = null! };
 
         Assert.Equal(SenderSettings.DefaultEngineId, sender.EngineId);
-        Assert.Equal(string.Empty, sender.VoiceId);
-        Assert.Equal(string.Empty, sender.FilterCharacters);
+        Assert.Equal(String.Empty, sender.VoiceId);
+        Assert.Equal(String.Empty, sender.FilterCharacters);
         Assert.Empty(sender.LanguageRules);
     }
 

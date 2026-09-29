@@ -174,9 +174,9 @@ public partial class SettingsWindow : Window
     private void DetectionTestBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var text = DetectionTestBox.Text;
-        if (string.IsNullOrWhiteSpace(text))
+        if (String.IsNullOrWhiteSpace(text))
         {
-            DetectionResultText.Text = string.Empty;
+            DetectionResultText.Text = String.Empty;
             return;
         }
 
@@ -190,7 +190,7 @@ public partial class SettingsWindow : Window
         });
 
         var winner = LanguageDetector.Detect(text, _languages.Snapshot);
-        DetectionResultText.Text = string.Join("   ", lines) + Environment.NewLine +
+        DetectionResultText.Text = String.Join("   ", lines) + Environment.NewLine +
             (winner != null ? $"Result: {winner.Name}" : "Result: no profile matched, so the sender's normal voice is used");
     }
 
@@ -262,7 +262,7 @@ public partial class SettingsWindow : Window
     {
         EngineHintText.Text = EngineCombo.SelectedItem is ITtsEngine { IsReady: false } engine
             ? $"{engine.DisplayName} isn't installed yet, so the default Windows voice is used for now. See the Engines tab."
-            : string.Empty;
+            : String.Empty;
     }
 
     private async void TestVoiceButton_Click(object sender, RoutedEventArgs e)
@@ -300,20 +300,20 @@ public partial class SettingsWindow : Window
     {
         var windows = _engines.Windows;
         WindowsStatus.Text = windows.IsReady
-            ? $"Ready - {windows.Voices.Count} voice(s): " + string.Join(", ", windows.Voices.Select(v => v.DisplayName))
+            ? $"Ready - {windows.Voices.Count} voice(s): " + String.Join(", ", windows.Voices.Select(v => v.DisplayName))
             : "No Windows voices found. Add some in Windows Settings.";
 
         var kokoro = _engines.Kokoro;
         KokoroStatus.Text = kokoro.IsReady
             ? $"Ready - {kokoro.Voices.Count} voices."
-            : "Not installed. Missing: " + string.Join("; ", kokoro.MissingParts);
+            : "Not installed. Missing: " + String.Join("; ", kokoro.MissingParts);
         KokoroInstallButton.Content = kokoro.IsReady ? "Reinstall / update" : "Install";
         KokoroInstallButton.IsEnabled = !kokoro.IsInstalling;
 
         var piper = _engines.Piper;
         PiperStatus.Text = piper.IsReady
             ? $"Ready - {piper.Voices.Count} voice(s) installed."
-            : "Not ready. Missing: " + string.Join("; ", piper.MissingParts) + ". Download a voice below to install it.";
+            : "Not ready. Missing: " + String.Join("; ", piper.MissingParts) + ". Download a voice below to install it.";
         PiperInstalledCombo.ItemsSource = piper.Voices;
         PiperInstalledCombo.SelectedIndex = piper.Voices.Count > 0 ? 0 : -1;
 
@@ -606,7 +606,7 @@ public partial class SettingsWindow : Window
     private void AddSenderFromBox()
     {
         var tag = NewSenderBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(tag)) return;
+        if (String.IsNullOrWhiteSpace(tag)) return;
 
         _services.Senders.GetOrCreate(tag);
         NewSenderBox.Clear();

@@ -56,7 +56,7 @@ public class ClipboardWatcher : IDisposable
         if (CopiedByHerald() || IsMarkedDoNotMonitor()) return;
 
         var text = await ReadTextAsync();
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (String.IsNullOrWhiteSpace(text)) return;
 
         // Some apps put the same text on the clipboard several times per copy.
         if (text == _lastText && DateTime.UtcNow - _lastTextUtc < TimeSpan.FromSeconds(2)) return;
@@ -76,7 +76,7 @@ public class ClipboardWatcher : IDisposable
         {
             try
             {
-                return Clipboard.ContainsText() ? Clipboard.GetText() : string.Empty;
+                return Clipboard.ContainsText() ? Clipboard.GetText() : String.Empty;
             }
             catch
             {
@@ -84,7 +84,7 @@ public class ClipboardWatcher : IDisposable
                 await Task.Delay(50);
             }
         }
-        return string.Empty;
+        return String.Empty;
     }
 
     private static bool CopiedByHerald()

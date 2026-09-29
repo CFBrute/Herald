@@ -47,7 +47,7 @@ public class AppLog
     /// <summary>A shortened, single-line version of a text, to show which message a line is about.</summary>
     public static string Excerpt(string? text, int length = 80)
     {
-        if (string.IsNullOrEmpty(text)) return "\"\"";
+        if (String.IsNullOrEmpty(text)) return "\"\"";
         var line = text.ReplaceLineEndings(" ");
         return "\"" + (line.Length > length ? line[..length] + "…" : line) + "\"";
     }

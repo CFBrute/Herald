@@ -20,6 +20,7 @@
     <VersionPrefix>1.0</VersionPrefix>
     <!-- The version text is built below, with the short commit instead of the full one. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- ONNX Runtime's package also ships .lib files for C++ projects; Herald doesn't use them,

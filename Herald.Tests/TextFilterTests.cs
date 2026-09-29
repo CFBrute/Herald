@@ -72,7 +72,7 @@ public class TextFilterTests
     [InlineData("   \n\t ")]
     [InlineData("```\nonly code\n```")]
     public void Returns_empty_when_nothing_speakable_is_left(string input) =>
-        Assert.Equal(string.Empty, Clean(input));
+        Assert.Equal(String.Empty, Clean(input));
 
     [Fact]
     public void Caps_absurdly_long_input()

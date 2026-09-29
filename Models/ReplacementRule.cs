@@ -6,18 +6,18 @@ namespace Herald.Models;
 /// </summary>
 public class ReplacementRule : ObservableObject
 {
-    private string _find = string.Empty;
+    private string _find = String.Empty;
     public string Find
     {
         get => _find;
-        set => SetField(ref _find, value ?? string.Empty);
+        set => SetField(ref _find, value ?? String.Empty);
     }
 
-    private string _replace = string.Empty;
+    private string _replace = String.Empty;
     public string Replace
     {
         get => _replace;
-        set => SetField(ref _replace, value ?? string.Empty);
+        set => SetField(ref _replace, value ?? String.Empty);
     }
 
     // Parameterless constructor lets the settings DataGrid add new rows.

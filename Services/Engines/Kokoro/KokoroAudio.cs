@@ -97,7 +97,7 @@ public static class KokoroAudio
     private static int BestOffset(float[] source, int searchFrom, int target, int window, int shifts)
     {
         var best = 0;
-        var bestScore = float.NegativeInfinity;
+        var bestScore = Single.NegativeInfinity;
         var wanted = source.AsSpan(target, window);
         for (var shift = 0; shift <= shifts; shift++)
         {
@@ -128,7 +128,7 @@ public static class KokoroAudio
         var buffer = new byte[samples.Length * 2];
         for (var i = 0; i < samples.Length; i++)
         {
-            var value = (short)Math.Round(Math.Clamp(samples[i], -1f, 1f) * short.MaxValue, MidpointRounding.ToEven);
+            var value = (short)Math.Round(Math.Clamp(samples[i], -1f, 1f) * Int16.MaxValue, MidpointRounding.ToEven);
             buffer[2 * i] = (byte)value;
             buffer[2 * i + 1] = (byte)(value >> 8);
         }

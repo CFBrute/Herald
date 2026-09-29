@@ -26,7 +26,7 @@ public static class TextFilter
 
     public static string Clean(string text, string filterCharacters, IReadOnlyList<ReplacementRule> replacements)
     {
-        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        if (String.IsNullOrWhiteSpace(text)) return String.Empty;
 
         var result = CodeBlock.Replace(text, "");
         result = InlineCode.Replace(result, "$1");

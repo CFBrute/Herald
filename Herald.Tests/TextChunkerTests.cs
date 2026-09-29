@@ -5,7 +5,7 @@ namespace Herald.Tests;
 public class TextChunkerTests
 {
     private static string Sentences(int count) =>
-        string.Join(" ", Enumerable.Range(1, count).Select(i => $"This is sentence number {i}."));
+        String.Join(" ", Enumerable.Range(1, count).Select(i => $"This is sentence number {i}."));
 
     [Fact]
     public void Short_text_is_one_part()
@@ -40,7 +40,7 @@ public class TextChunkerTests
 
         Assert.True(parts.Count > 1);
         Assert.All(parts, p => Assert.EndsWith(".", p));
-        Assert.Equal(text, string.Join(" ", parts));
+        Assert.Equal(text, String.Join(" ", parts));
     }
 
     [Fact]
@@ -75,13 +75,13 @@ public class TextChunkerTests
     public void A_stretch_without_sentence_ends_falls_back_to_commas()
     {
         var clauses = Enumerable.Range(1, 12).Select(i => $"and then clause number {i} continues on");
-        var text = string.Join(", ", clauses) + ".";
+        var text = String.Join(", ", clauses) + ".";
 
         var parts = TextChunker.Split(text, 100, 100);
 
         Assert.True(parts.Count > 1);
         Assert.All(parts.SkipLast(1), p => Assert.EndsWith(",", p));
-        Assert.Equal(text, string.Join(" ", parts));
+        Assert.Equal(text, String.Join(" ", parts));
     }
 
     private static string Clean(string text) => TextFilter.Clean(text, "*", []);
@@ -89,13 +89,13 @@ public class TextChunkerTests
     [Fact]
     public void Each_part_shows_its_own_unchanged_slice_of_the_message()
     {
-        var text = "## Result\n" + string.Join(" ", Enumerable.Range(1, 30).Select(i => $"Sentence **{i}** is here."));
+        var text = "## Result\n" + String.Join(" ", Enumerable.Range(1, 30).Select(i => $"Sentence **{i}** is here."));
 
         var parts = TextChunker.SplitMessage(text, Clean, 300, 250);
 
         Assert.True(parts.Count > 1);
         // The shown parts are the original, cut only between parts.
-        Assert.Equal(text, string.Join(" ", parts.Select(p => p.Shown)));
+        Assert.Equal(text, String.Join(" ", parts.Select(p => p.Shown)));
         Assert.StartsWith("## Result\nSentence **1** is here.", parts[0].Shown);
         Assert.StartsWith("Result. Sentence 1 is here.", parts[0].Spoken);
         Assert.All(parts, p => Assert.DoesNotContain("*", p.Spoken));
@@ -122,13 +122,13 @@ public class TextChunkerTests
     [Fact]
     public void A_part_cut_inside_a_line_gets_no_added_pause()
     {
-        var words = string.Join(" ", Enumerable.Range(1, 200).Select(i => $"word{i}"));
+        var words = String.Join(" ", Enumerable.Range(1, 200).Select(i => $"word{i}"));
 
         var parts = TextChunker.SplitMessage(words, Clean, 100, 100);
 
         Assert.All(parts.SkipLast(1), p => Assert.False(p.Spoken.EndsWith('.'), p.Spoken));
         Assert.EndsWith(".", parts[^1].Spoken);
-        Assert.Equal(words, string.Join(" ", parts.Select(p => p.Shown)));
+        Assert.Equal(words, String.Join(" ", parts.Select(p => p.Shown)));
     }
 
     [Fact]
@@ -136,11 +136,11 @@ public class TextChunkerTests
     {
         var words = Enumerable.Range(1, 200).Select(i => $"word{i}").ToList();
 
-        var parts = TextChunker.Split(string.Join(" ", words), 100, 100);
+        var parts = TextChunker.Split(String.Join(" ", words), 100, 100);
 
         Assert.True(parts.Count > 1);
         Assert.All(parts, p => Assert.True(p.Length <= 150, $"part was {p.Length} characters"));
         // No word is cut in half or lost.
-        Assert.Equal(string.Join(" ", words) + ".", string.Join(" ", parts));
+        Assert.Equal(String.Join(" ", words) + ".", String.Join(" ", parts));
     }
 }

@@ -57,7 +57,7 @@ public class SenderSettings : ObservableObject
     public string VoiceId
     {
         get => _voiceId;
-        set => SetField(ref _voiceId, value ?? string.Empty);
+        set => SetField(ref _voiceId, value ?? String.Empty);
     }
 
     public const string DefaultEngineId = "windows";
@@ -78,7 +78,7 @@ public class SenderSettings : ObservableObject
     public string FilterCharacters
     {
         get => _filterCharacters;
-        set => SetField(ref _filterCharacters, value ?? string.Empty);
+        set => SetField(ref _filterCharacters, value ?? String.Empty);
     }
 
     public static readonly string DefaultFilterCharacters = "*-_/\\\"" + (char)0x2013 + (char)0x2014;
@@ -123,7 +123,7 @@ public class SenderSettings : ObservableObject
         _showAsMarkdown = DefaultShowAsMarkdown(sender);
         _filterCharacters = filterCharacters ?? DefaultFilterCharacters;
         _engineId = engineId ?? DefaultEngineId;
-        _voiceId = voiceId ?? string.Empty;
+        _voiceId = voiceId ?? String.Empty;
 
         foreach (var rule in replacements ?? DefaultReplacements())
         {

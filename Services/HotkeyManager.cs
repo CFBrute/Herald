@@ -177,7 +177,7 @@ public class HotkeyManager : IDisposable
         await SelectionCopier.CopySelectionAsync();
 
         var text = await ClipboardWatcher.ReadTextAsync();
-        if (string.IsNullOrWhiteSpace(text))
+        if (String.IsNullOrWhiteSpace(text))
         {
             _engine.Announce("The clipboard has no text");
             return;

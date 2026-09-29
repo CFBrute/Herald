@@ -58,7 +58,7 @@ public class KokoroParityTests
             .Select(c => $"[{c.Lang}] {c.Text}\n  python: {c.Expected}\n  herald: {c.Actual}")
             .ToList();
 
-        Assert.True(differences.Count == 0, string.Join("\n", differences));
+        Assert.True(differences.Count == 0, String.Join("\n", differences));
     }
 
     [Fact]
@@ -68,9 +68,9 @@ public class KokoroParityTests
 
         foreach (var c in Expected.Phonemes)
         {
-            var batches = KokoroSynthesizer.SplitPhonemes(string.Join(" ", c.Phonemes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
-            var expected = c.Batches.Select((b, i) => (b.Phonemes, string.Join(",", b.Tokens), i < c.Batches.Length - 1 ? b.Pause : 0.0));
-            var actual = batches.Select((b, i) => (b, string.Join(",", tokenize.Of(b)), i < batches.Count - 1 ? KokoroSynthesizer.PauseAfter(b) : 0.0));
+            var batches = KokoroSynthesizer.SplitPhonemes(String.Join(" ", c.Phonemes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
+            var expected = c.Batches.Select((b, i) => (b.Phonemes, String.Join(",", b.Tokens), i < c.Batches.Length - 1 ? b.Pause : 0.0));
+            var actual = batches.Select((b, i) => (b, String.Join(",", tokenize.Of(b)), i < batches.Count - 1 ? KokoroSynthesizer.PauseAfter(b) : 0.0));
             Assert.Equal(expected, actual);
         }
     }
@@ -114,10 +114,10 @@ public class KokoroParityTests
             var maxDifference = Enumerable.Range(0, length).Max(i => Math.Abs(expected[i] - actual[i]));
             report.Add($"{c.Name}: python {expected.Length} samples, herald {actual.Length}, largest difference {maxDifference:0.000000}");
 
-            Assert.True(expected.Length == actual.Length, string.Join("\n", report));
+            Assert.True(expected.Length == actual.Length, String.Join("\n", report));
             // Far below anything audible (one step of 16-bit audio is 0.00003).
-            Assert.True(maxDifference < 0.001, string.Join("\n", report));
+            Assert.True(maxDifference < 0.001, String.Join("\n", report));
         }
-        TestContext.Current.SendDiagnosticMessage(string.Join("\n", report));
+        TestContext.Current.SendDiagnosticMessage(String.Join("\n", report));
     }
 }

@@ -222,7 +222,7 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
             Refresh();
             if (!IsReady)
             {
-                log.Report("Still missing: " + string.Join(", ", MissingParts));
+                log.Report("Still missing: " + String.Join(", ", MissingParts));
                 return false;
             }
 
@@ -354,7 +354,7 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
             {
                 var (code, name) = Languages[id[0]];
                 var gender = id[1] == 'f' ? "female" : "male";
-                var display = char.ToUpper(id[3]) + id[4..];
+                var display = Char.ToUpper(id[3]) + id[4..];
                 return new VoiceInfo(id, $"{display} ({name}, {gender})", code);
             })
         ];

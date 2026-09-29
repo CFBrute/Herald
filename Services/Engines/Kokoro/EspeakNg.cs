@@ -130,9 +130,9 @@ public sealed class EspeakNg
                 while (position != IntPtr.Zero)
                 {
                     var phonemes = Marshal.PtrToStringUTF8(_textToPhonemes(ref position, TextModeUtf8, PhonemeModeIpa));
-                    if (!string.IsNullOrEmpty(phonemes)) clauses.Add(phonemes);
+                    if (!String.IsNullOrEmpty(phonemes)) clauses.Add(phonemes);
                 }
-                return string.Join(" ", clauses);
+                return String.Join(" ", clauses);
             }
             finally
             {

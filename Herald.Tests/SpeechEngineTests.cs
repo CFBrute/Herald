@@ -110,7 +110,7 @@ public class SpeechEngineTests : IDisposable
         Assert.Equal(Enumerable.Range(1, parts.Length), parts.Select(p => p.PartIndex));
         Assert.All(parts, p => Assert.Equal(parts.Length, p.PartCount));
         Assert.Equal(parts.Select(p => p.AudioFilePath), _h.Player.Played);
-        Assert.Equal(LongMessage, string.Join(" ", parts.Select(p => p.Text)));
+        Assert.Equal(LongMessage, String.Join(" ", parts.Select(p => p.Text)));
     }
 
     [Theory]

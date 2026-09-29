@@ -96,7 +96,7 @@ public class QueueItem : ObservableObject
     public Guid GroupId { get; init; }
     public int PartIndex { get; init; } = 1;
     public int PartCount { get; init; } = 1;
-    public string PartLabel => PartCount > 1 ? $"{PartIndex}/{PartCount}" : string.Empty;
+    public string PartLabel => PartCount > 1 ? $"{PartIndex}/{PartCount}" : String.Empty;
 
     private QueueItemStatus _status = QueueItemStatus.Queued;
     public QueueItemStatus Status

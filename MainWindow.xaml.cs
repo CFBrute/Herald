@@ -306,7 +306,7 @@ public partial class MainWindow : Window
     private void EnqueueManualText()
     {
         var text = ManualSpeakBox.Text;
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (String.IsNullOrWhiteSpace(text)) return;
 
         _engine.EnqueueText(text, "herald");
         ManualSpeakBox.Clear();

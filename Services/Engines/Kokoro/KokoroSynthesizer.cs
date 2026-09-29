@@ -131,7 +131,7 @@ public sealed class KokoroSynthesizer : IDisposable
             if (Pack(lengths, middle).Count <= fewest) high = middle;
             else low = middle + 1;
         }
-        return [.. Pack(lengths, low).Select(r => string.Join(" ", atoms.Skip(r.Start).Take(r.End - r.Start)))];
+        return [.. Pack(lengths, low).Select(r => String.Join(" ", atoms.Skip(r.Start).Take(r.End - r.Start)))];
     }
 
     /// <summary>Pieces of the phonemes no longer than the limit, cut at the least disruptive place.</summary>

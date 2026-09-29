@@ -39,7 +39,7 @@ public class PiperEngine : ObservableObject, ITtsEngine
     private string PiperExe => Path.Combine(_engineDir, "piper", "piper.exe");
 
     public IReadOnlyList<VoiceInfo> Voices { get; private set; } = [];
-    public string DefaultVoiceId => Voices.FirstOrDefault()?.Id ?? string.Empty;
+    public string DefaultVoiceId => Voices.FirstOrDefault()?.Id ?? String.Empty;
 
     private IReadOnlyList<string> _missingParts = [];
     public IReadOnlyList<string> MissingParts => _missingParts;
@@ -137,7 +137,7 @@ public class PiperEngine : ObservableObject, ITtsEngine
 
             _log?.Write("piper", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}: exit code {process.ExitCode}" +
                                  (File.Exists(outPath) ? "" : ", no audio written") +
-                                 (string.IsNullOrWhiteSpace(stderr.Result) ? "" : Environment.NewLine + "    " + stderr.Result.Trim()));
+                                 (String.IsNullOrWhiteSpace(stderr.Result) ? "" : Environment.NewLine + "    " + stderr.Result.Trim()));
             return false;
         }
         catch (OperationCanceledException)

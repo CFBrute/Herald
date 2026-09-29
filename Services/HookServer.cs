@@ -229,12 +229,12 @@ public class HookServer
                 return;
             }
 
-            var sender = string.IsNullOrWhiteSpace(command.Sender) ? "unknown" : command.Sender;
+            var sender = String.IsNullOrWhiteSpace(command.Sender) ? "unknown" : command.Sender;
 
             switch (command.Type)
             {
                 case "speak":
-                    if (!string.IsNullOrWhiteSpace(command.Text))
+                    if (!String.IsNullOrWhiteSpace(command.Text))
                     {
                         _engine.EnqueueText(command.Text, sender);
                     }

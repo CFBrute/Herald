@@ -29,7 +29,7 @@ public class HookServerTests : IDisposable
     {
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort!.Value);
-        using var stream = client.GetStream();
+        await using var stream = client.GetStream();
         await stream.WriteAsync(Encoding.UTF8.GetBytes(line + "\n"));
         using var reader = new StreamReader(stream, Encoding.UTF8);
         return await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
@@ -119,12 +119,12 @@ public class HookServerTests : IDisposable
     public async Task The_reply_is_plain_utf8_without_a_byte_order_mark()
     {
         using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort!.Value);
-        using var stream = client.GetStream();
-        await stream.WriteAsync(Encoding.UTF8.GetBytes("""{ "type": "skip" }""" + "\n"));
+        await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort!.Value, CancellationToken.None);
+        await using var stream = client.GetStream();
+        await stream.WriteAsync(Encoding.UTF8.GetBytes("""{ "type": "skip" }""" + "\n"), CancellationToken.None);
 
         var first = new byte[1];
-        await stream.ReadExactlyAsync(first);
+        await stream.ReadExactlyAsync(first, CancellationToken.None);
 
         Assert.Equal((byte)'{', first[0]);
     }
@@ -140,8 +140,8 @@ public class HookServerTests : IDisposable
     {
         Assert.Equal("""{"status":"error"}""", await Send("this is not json"));
 
-        Assert.Contains("| hook | Couldn't read a message", File.ReadAllText(_h.Paths.HeraldLog));
-        Assert.Contains("\"this is not json\"", File.ReadAllText(_h.Paths.HeraldLog));
+        Assert.Contains("| hook | Couldn't read a message", await File.ReadAllTextAsync(_h.Paths.HeraldLog, CancellationToken.None));
+        Assert.Contains("\"this is not json\"", await File.ReadAllTextAsync(_h.Paths.HeraldLog, CancellationToken.None));
         Assert.Equal("ok", (string?)(await Command("""{ "type": "skip" }"""))["status"]);
     }
 
@@ -150,7 +150,7 @@ public class HookServerTests : IDisposable
     {
         await Command("""{ "type": "dance", "sender": "tester" }""");
 
-        Assert.Contains("Unknown command \"dance\" from tester", File.ReadAllText(_h.Paths.HeraldLog));
+        Assert.Contains("Unknown command \"dance\" from tester", await File.ReadAllTextAsync(_h.Paths.HeraldLog, CancellationToken.None));
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public class HookServerPortTests : IDisposable
         Assert.Equal(port, _server.ListeningPort);
         Assert.True(await Answers(port));
         Assert.Equal($"Listening on 127.0.0.1:{port}", _server.StatusText);
-        var json = JsonNode.Parse(File.ReadAllText(_h.Paths.EndpointFile))!;
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(_h.Paths.EndpointFile, CancellationToken.None))!;
         Assert.Equal(("127.0.0.1", port, Environment.ProcessId), ((string?)json["host"], (int)json["port"]!, (int)json["pid"]!));
         Assert.Equal(port, HookServer.ReadEndpointPort(_h.Paths.EndpointFile));
 
@@ -243,7 +243,7 @@ public class HookServerPortTests : IDisposable
             Assert.Null(_server.ListeningPort);
             Assert.Equal($"Port {taken} is in use by another program; choose another in Settings", _server.StatusText);
             Assert.False(File.Exists(_h.Paths.EndpointFile));
-            Assert.Contains($"| hook | Port {taken} is in use by another program", File.ReadAllText(_h.Paths.HeraldLog));
+            Assert.Contains($"| hook | Port {taken} is in use by another program", await File.ReadAllTextAsync(_h.Paths.HeraldLog, CancellationToken.None));
 
             var free = FreePort();
             _h.Settings.HookPort = free;

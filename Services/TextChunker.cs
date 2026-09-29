@@ -98,7 +98,7 @@ public static class TextChunker
         {
             if ((i < lines.Count - 1 || endsLine) && EndPunctuation.IndexOf(lines[i][^1]) < 0) lines[i] += ".";
         }
-        return string.Join(" ", lines);
+        return String.Join(" ", lines);
     }
 
     private static List<Piece> Pieces(string text, Func<string, string> clean, int hardMax)
@@ -127,8 +127,8 @@ public static class TextChunker
     /// <summary>Adds the trimmed stretch (if any) and returns its cleaned length.</summary>
     private static int Add(List<Piece> pieces, string text, int start, int end, Func<string, string> clean)
     {
-        while (start < end && char.IsWhiteSpace(text[start])) start++;
-        while (end > start && char.IsWhiteSpace(text[end - 1])) end--;
+        while (start < end && Char.IsWhiteSpace(text[start])) start++;
+        while (end > start && Char.IsWhiteSpace(text[end - 1])) end--;
         if (start == end) return 0;
 
         var length = clean(text[start..end]).Trim().Length;

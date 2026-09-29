@@ -69,7 +69,7 @@ public partial class CleanupWindow : Window
         var log = HeraldCleanup.Run(options, _services);
 
         MessageBox.Show(this,
-            (log.Count > 0 ? string.Join(Environment.NewLine, log) : "Nothing was selected.") +
+            (log.Count > 0 ? String.Join(Environment.NewLine, log) : "Nothing was selected.") +
             Environment.NewLine + Environment.NewLine + "Herald will now close.",
             "Cleanup finished", MessageBoxButton.OK,
             log.Any(l => l.StartsWith("Couldn't")) ? MessageBoxImage.Warning : MessageBoxImage.Information);

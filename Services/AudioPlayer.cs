@@ -65,8 +65,10 @@ public class AudioPlayer : IAudioPlayer
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
                 reader.Position = 0;
+
                 using var output = new WasapiPlayerBuilder().WithSharedMode().WithLatency(100).Build();
                 using var done = new ManualResetEventSlim(false);
+
                 Exception? playbackError = null;
                 output.PlaybackStopped += (_, e) =>
                 {
@@ -143,15 +145,16 @@ public class AudioPlayer : IAudioPlayer
     {
         try
         {
-            using var reader = new AudioFileReader(path);
-            ISampleProvider samples = reader;
             var buffer = new float[16384];
             var peak = 0f;
             int read;
-            while ((read = samples.Read(buffer.AsSpan())) > 0)
+
+            using var reader = new AudioFileReader(path);
+            while ((read = reader.Read(buffer.AsSpan())) > 0)
             {
                 for (var i = 0; i < read; i++) peak = Math.Max(peak, Math.Abs(buffer[i]));
             }
+
             return peak;
         }
         catch

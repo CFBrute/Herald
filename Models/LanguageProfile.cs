@@ -20,15 +20,15 @@ public class LanguageProfile : ObservableObject
     public string Name
     {
         get => _name;
-        set => SetField(ref _name, value ?? string.Empty);
+        set => SetField(ref _name, value ?? String.Empty);
     }
 
-    private string _markers = string.Empty;
+    private string _markers = String.Empty;
     /// <summary>Space- or comma-separated words; single letters match any word containing them.</summary>
     public string Markers
     {
         get => _markers;
-        set => SetField(ref _markers, value ?? string.Empty);
+        set => SetField(ref _markers, value ?? String.Empty);
     }
 
     private int _minMatches = 3;

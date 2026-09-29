@@ -70,7 +70,7 @@ public static class SelectionCopier
         {
             GetWindowThreadProcessId(GetForegroundWindow(), out var pid);
             using var process = Process.GetProcessById((int)pid);
-            return Array.Exists(TerminalProcesses, name => string.Equals(name, process.ProcessName, StringComparison.OrdinalIgnoreCase));
+            return Array.Exists(TerminalProcesses, name => String.Equals(name, process.ProcessName, StringComparison.OrdinalIgnoreCase));
         }
         catch
         {

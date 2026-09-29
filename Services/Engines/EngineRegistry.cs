@@ -21,7 +21,7 @@ public class EngineRegistry : IDisposable
     }
 
     public ITtsEngine? Find(string? id) =>
-        All.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
+        All.FirstOrDefault(e => String.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// The engine and voice to actually use: the sender's choice when that engine is

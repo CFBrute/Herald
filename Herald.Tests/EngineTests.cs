@@ -198,7 +198,7 @@ public class KokoroErrorTests
         var kokoro = new KokoroEngine(RealEngines(), new AppLog(logPath, logPath + ".old"));
         // Loaded first, so closing lands in the middle of the synthesis, not the loading.
         Assert.True(await kokoro.SynthesizeAsync("Ready", "am_michael", 1.0, Path.Combine(dir.Path, "ready.wav"), CancellationToken.None));
-        var text = string.Join(" ", Enumerable.Repeat("This is a long sentence that keeps the model busy for a while.", 20));
+        var text = String.Join(" ", Enumerable.Repeat("This is a long sentence that keeps the model busy for a while.", 20));
 
         var speaking = kokoro.SynthesizeAsync(text, "am_michael", 1.0, Path.Combine(dir.Path, "long.wav"), CancellationToken.None);
         await Task.Delay(500, TestContext.Current.CancellationToken);
@@ -212,7 +212,7 @@ public class KokoroErrorTests
 public class KokoroPartsTests
 {
     // A stand-in for espeak: words as "phonemes" in capitals, the way it hands out one clause.
-    private static string FakeEspeak(string text, string language) => string.Join(" ", text.Split(' ').Select(w => w.ToUpperInvariant()));
+    private static string FakeEspeak(string text, string language) => String.Join(" ", text.Split(' ').Select(w => w.ToUpperInvariant()));
 
     private static readonly IReadOnlyDictionary<char, int> Letters =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ ,.!?;:\"()—…".Select((c, i) => (c, i + 1)).ToDictionary(p => p.c, p => p.Item2);

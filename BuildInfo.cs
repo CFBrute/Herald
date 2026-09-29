@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 
 namespace Herald;
@@ -23,7 +21,7 @@ public static class BuildInfo
 
     /// <summary>Like "2026-09-29 17:50"; empty if unknown.</summary>
     public static string BuildTime =>
-        Herald.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "BuildTime")?.Value ?? string.Empty;
+        Herald.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "BuildTime")?.Value ?? String.Empty;
 
     /// <summary>Shown in the main window: "v1.0.14 · 29f2105".</summary>
     public static string Label => Describe(Version, Commit);
@@ -34,9 +32,9 @@ public static class BuildInfo
     /// <summary>"1.0.14+29f2105*" into its version and commit.</summary>
     public static (string Version, string Commit) Split(string? informational)
     {
-        if (string.IsNullOrEmpty(informational)) return ("0.0.0", string.Empty);
+        if (String.IsNullOrEmpty(informational)) return ("0.0.0", String.Empty);
         var plus = informational.IndexOf('+');
-        return plus < 0 ? (informational, string.Empty) : (informational[..plus], informational[(plus + 1)..]);
+        return plus < 0 ? (informational, String.Empty) : (informational[..plus], informational[(plus + 1)..]);
     }
 
     public static string Describe(string version, string commit) =>
@@ -46,6 +44,6 @@ public static class BuildInfo
     {
         var lines = new List<string> { buildTime.Length > 0 ? $"Built {buildTime}" : "Build time unknown" };
         if (commit.EndsWith('*')) lines.Add("* with changes that weren't committed yet");
-        return string.Join("\n", lines);
+        return String.Join("\n", lines);
     }
 }

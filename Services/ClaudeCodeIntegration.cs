@@ -79,7 +79,7 @@ public class ClaudeCodeIntegration
         var others = messageDisplay.Except(own).ToList();
         if (others.Count > 0 && own.Count > 0)
         {
-            notes.Add("Another hook also sends to Herald (" + string.Join(", ", others.Select(ScriptPathOf)) +
+            notes.Add("Another hook also sends to Herald (" + String.Join(", ", others.Select(ScriptPathOf)) +
                       "), so replies may be spoken twice. Reconnect removes it.");
         }
 
@@ -92,16 +92,16 @@ public class ClaudeCodeIntegration
             }
 
             return new ClaudeStatus(ClaudeConnectionState.Connected, "Claude Code is connected to Herald.",
-                string.Join(" ", new[] { $"Using Herald's own hook: {_hookScriptPath}" }.Concat(notes)));
+                String.Join(" ", new[] { $"Using Herald's own hook: {_hookScriptPath}" }.Concat(notes)));
         }
 
         if (others.Count > 0)
         {
             return new ClaudeStatus(ClaudeConnectionState.ConnectedThroughOtherScript,
                 "Claude Code sends to Herald through a script Herald doesn't manage.",
-                string.Join(" ", new[]
+                String.Join(" ", new[]
                 {
-                    "Current hook: " + string.Join(", ", others.Select(ScriptPathOf)) + ".",
+                    "Current hook: " + String.Join(", ", others.Select(ScriptPathOf)) + ".",
                     "It works, but Herald can't keep it up to date. Click Connect to switch to Herald's own hook."
                 }.Concat(notes)));
         }
@@ -109,7 +109,7 @@ public class ClaudeCodeIntegration
         var detail = "Claude Code is installed, but its replies aren't sent to Herald yet.";
         if (legacyStop.Count > 0) detail = "Only the older Stop hook is wired, which speaks the whole reply at the end of a turn.";
         return new ClaudeStatus(ClaudeConnectionState.NotConnected, "Claude Code is not connected to Herald.",
-            string.Join(" ", new[] { detail }.Concat(notes)));
+            String.Join(" ", new[] { detail }.Concat(notes)));
     }
 
     private bool IsOwnHook(string command) => command.Contains(_hookScriptPath, StringComparison.OrdinalIgnoreCase);
@@ -139,7 +139,7 @@ public class ClaudeCodeIntegration
     {
         var legacyScript = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                                         AppPaths.LegacyName, "integrations", "claude-hook.ps1");
-        if (string.Equals(legacyScript, _hookScriptPath, StringComparison.OrdinalIgnoreCase)) return;
+        if (String.Equals(legacyScript, _hookScriptPath, StringComparison.OrdinalIgnoreCase)) return;
 
         var root = ReadSettings();
         var legacyHooks = (root["hooks"]?["MessageDisplay"] as JsonArray ?? [])
@@ -215,7 +215,7 @@ public class ClaudeCodeIntegration
         if (!File.Exists(SettingsPath)) return new JsonObject();
 
         var text = File.ReadAllText(SettingsPath);
-        if (string.IsNullOrWhiteSpace(text)) return new JsonObject();
+        if (String.IsNullOrWhiteSpace(text)) return new JsonObject();
 
         var node = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
         {
@@ -290,13 +290,13 @@ public class ClaudeCodeIntegration
     private static string ScriptPathOf(string command)
     {
         var match = ScriptPathInCommand.Match(command);
-        if (!match.Success) return string.Empty;
+        if (!match.Success) return String.Empty;
         var path = match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
         return Environment.ExpandEnvironmentVariables(path.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)));
     }
 
     private static string? FindOnPath(string exe) =>
-        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+        (Environment.GetEnvironmentVariable("PATH") ?? String.Empty)
             .Split(';', StringSplitOptions.RemoveEmptyEntries)
             .Select(dir => Path.Combine(dir.Trim(), exe))
             .FirstOrDefault(File.Exists);

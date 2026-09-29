@@ -50,7 +50,7 @@ public class SenderSettingsStore
     /// </summary>
     public SenderSettings GetOrCreate(string sender)
     {
-        if (string.IsNullOrWhiteSpace(sender)) sender = "unknown";
+        if (String.IsNullOrWhiteSpace(sender)) sender = "unknown";
 
         SenderSettings created;
         lock (_lock)
@@ -77,7 +77,7 @@ public class SenderSettingsStore
     {
         foreach (var dto in SafeFile.ReadJson<List<SenderSettingsDto>>(_filePath) ?? [])
         {
-            if (string.IsNullOrWhiteSpace(dto.Sender)) continue;
+            if (String.IsNullOrWhiteSpace(dto.Sender)) continue;
             var replacements = dto.Replacements?.Select(r => new ReplacementRule(r.Find, r.Replace));
 
             // Entries saved before engines were selectable were all spoken by Kokoro.

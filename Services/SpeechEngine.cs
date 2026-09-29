@@ -284,7 +284,7 @@ public class SpeechEngine : ObservableObject, IDisposable
 
     private void EnqueueInternal(string text, string sender, bool playWhenDisabled, bool speedAnnouncement = false)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
+        if (String.IsNullOrWhiteSpace(text)) return;
 
         var settings = _senders.GetOrCreate(sender);
         if (settings.Muted) return;
@@ -689,14 +689,14 @@ public class SpeechEngine : ObservableObject, IDisposable
                 voice = $"{engine.Id}/{voiceId}";
             }
 
-            var line = string.Join(" | ",
+            var line = String.Join(" | ",
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
                 $"{item.Sender} {item.PartIndex}/{item.PartCount}",
                 voice,
                 $"clip {result.Duration.TotalSeconds:0.0}s",
                 $"peak {AudioPlayer.PeakLevel(path):0.000}",
-                $"{result.End} after {result.Elapsed.TotalSeconds:0.0}s" + (result.Attempts > 1 ? $" (restarted, attempt {result.Attempts})" : string.Empty),
-                Path.GetFileName(path) + (result.Error != null ? " | error: " + result.Error : string.Empty));
+                $"{result.End} after {result.Elapsed.TotalSeconds:0.0}s" + (result.Attempts > 1 ? $" (restarted, attempt {result.Attempts})" : String.Empty),
+                Path.GetFileName(path) + (result.Error != null ? " | error: " + result.Error : String.Empty));
             File.AppendAllText(logPath, line + Environment.NewLine);
         }
         catch

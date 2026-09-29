@@ -27,7 +27,7 @@ public class WindowsTtsEngine : ObservableObject, ITtsEngine
     public IReadOnlyList<string> MissingParts => IsReady ? [] : ["No Windows voices installed"];
 
     public IReadOnlyList<VoiceInfo> Voices { get; private set; } = [];
-    public string DefaultVoiceId { get; private set; } = string.Empty;
+    public string DefaultVoiceId { get; private set; } = String.Empty;
 
     public WindowsTtsEngine(AppLog? log = null)
     {
@@ -45,12 +45,12 @@ public class WindowsTtsEngine : ObservableObject, ITtsEngine
                     .Select(v => new VoiceInfo(v.Id, $"{v.DisplayName} ({v.Language})", v.Language))
                     .OrderBy(v => v.DisplayName)
             ];
-            DefaultVoiceId = SpeechSynthesizer.DefaultVoice?.Id ?? Voices.FirstOrDefault()?.Id ?? string.Empty;
+            DefaultVoiceId = SpeechSynthesizer.DefaultVoice?.Id ?? Voices.FirstOrDefault()?.Id ?? String.Empty;
         }
         catch
         {
             Voices = [];
-            DefaultVoiceId = string.Empty;
+            DefaultVoiceId = String.Empty;
         }
 
         OnPropertyChanged(nameof(Voices));
