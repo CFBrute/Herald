@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
+    <!-- Only Herald itself is published; a publish that reaches here would fail anyway. -->
+    <IsPublishable>false</IsPublishable>
     <!-- xUnit v3 test projects are executables. -->
     <OutputType>Exe</OutputType>
   </PropertyGroup>
