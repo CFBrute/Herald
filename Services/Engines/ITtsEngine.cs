@@ -28,7 +28,7 @@ public interface ITtsEngine : INotifyPropertyChanged
     IReadOnlyList<VoiceInfo> Voices { get; }
     string DefaultVoiceId { get; }
 
-    /// <summary>Writes a WAV file. Speed 1.0 is normal, 1.9 is the fastest Herald uses.</summary>
+    /// <summary>Writes a WAV file. Speed 1.0 is normal; Herald uses 0.5 to 3.0.</summary>
     Task<bool> SynthesizeAsync(string text, string voiceId, double speed, string outPath, CancellationToken ct);
 
     /// <summary>Re-checks installed parts and voices.</summary>

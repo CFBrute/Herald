@@ -56,7 +56,7 @@
                                    VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
 
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="Speed" VerticalAlignment="Center"/>
-                        <Slider Grid.Row="4" Grid.Column="1" Minimum="100" Maximum="190" TickFrequency="10" IsSnapToTickEnabled="True"
+                        <Slider Grid.Row="4" Grid.Column="1" Minimum="50" Maximum="300" TickFrequency="10" IsSnapToTickEnabled="True"
                                 Value="{Binding SpeedPercent}" VerticalAlignment="Center"/>
                         <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
                         <TextBlock Grid.Row="4" Grid.Column="3" Text="Also via the Alt+Shift+0-9 hotkeys"

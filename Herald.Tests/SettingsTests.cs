@@ -113,8 +113,8 @@ public class AppSettingsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(nameof(AppSettings.SpeedPercent), 50, 100)]
-    [InlineData(nameof(AppSettings.SpeedPercent), 500, 190)]
+    [InlineData(nameof(AppSettings.SpeedPercent), 20, 50)]
+    [InlineData(nameof(AppSettings.SpeedPercent), 500, 300)]
     [InlineData(nameof(AppSettings.Volume), -5, 0)]
     [InlineData(nameof(AppSettings.Volume), 150, 100)]
     [InlineData(nameof(AppSettings.UiScalePercent), 10, 70)]
@@ -139,7 +139,7 @@ public class AppSettingsTests : IDisposable
 
         var settings = new AppSettings(FilePath);
 
-        Assert.Equal(190, settings.SpeedPercent);
+        Assert.Equal(300, settings.SpeedPercent);
         Assert.Equal(0, settings.Volume);
         Assert.Equal(70, settings.UiScalePercent);
     }
@@ -157,6 +157,14 @@ public class AppSettingsTests : IDisposable
         Assert.Equal(200, settings.HistoryLimit);
         Assert.Equal(100, settings.Volume);
         Assert.True(settings.AskToConnectClaude);
+    }
+
+    [Fact]
+    public void A_file_without_a_speed_keeps_normal_speed()
+    {
+        File.WriteAllText(FilePath, """{ "Volume": 70 }""");
+
+        Assert.Equal(100, new AppSettings(FilePath).SpeedPercent);
     }
 
     [Fact]

@@ -77,7 +77,8 @@ public class HookServerTests : IDisposable
 
     [Theory]
     [InlineData(150, 150)]
-    [InlineData(999, 190)]
+    [InlineData(999, 300)]
+    [InlineData(10, 50)]
     public async Task Set_speed_changes_the_speed_within_range(int requested, int expected)
     {
         var reply = await Command($$"""{ "type": "setspeed", "value": {{requested}} }""");

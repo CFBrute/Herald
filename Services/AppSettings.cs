@@ -17,7 +17,7 @@ public class AppSettings : ObservableObject
     public int SpeedPercent
     {
         get => _speedPercent;
-        set => Set(ref _speedPercent, Math.Clamp(value, 100, 190));
+        set => Set(ref _speedPercent, Math.Clamp(value, 50, 300));
     }
 
     private int _chunkThreshold = 300;
@@ -110,8 +110,8 @@ public class AppSettings : ObservableObject
 
         // Assigned through the properties so the file's values are clamped too.
         _loading = true;
-        SpeedPercent = dto.SpeedPercent;
         // Files saved before these options existed read them as 0 (or null): keep the defaults.
+        if (dto.SpeedPercent > 0) SpeedPercent = dto.SpeedPercent;
         if (dto.ChunkThreshold > 0) ChunkThreshold = dto.ChunkThreshold;
         if (dto.ChunkTargetLength > 0) ChunkTargetLength = dto.ChunkTargetLength;
         if (dto.HistoryLimit > 0) HistoryLimit = dto.HistoryLimit;
