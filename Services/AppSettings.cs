@@ -13,7 +13,7 @@ public class AppSettings : ObservableObject
 {
     private readonly string _filePath;
 
-    private int _speedPercent = 100;
+    private int _speedPercent = 150;
     public int SpeedPercent
     {
         get => _speedPercent;

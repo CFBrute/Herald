@@ -38,6 +38,14 @@ public class TextFilterTests
     }
 
     [Fact]
+    public void The_default_filter_strips_stars_left_over_from_markdown()
+    {
+        var result = Clean("* An *important* point", SenderSettings.DefaultFilterCharacters);
+
+        Assert.Equal("An important point", result);
+    }
+
+    [Fact]
     public void Applies_replacements_before_stripping_characters()
     {
         // The default rule turns an em dash into a pause, even though the em dash is also

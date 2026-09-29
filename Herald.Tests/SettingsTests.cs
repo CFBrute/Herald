@@ -79,7 +79,7 @@ public class AppSettingsTests : IDisposable
     {
         var settings = new AppSettings(FilePath);
 
-        Assert.Equal(100, settings.SpeedPercent);
+        Assert.Equal(150, settings.SpeedPercent);
         Assert.Equal(300, settings.ChunkThreshold);
         Assert.Equal(250, settings.ChunkTargetLength);
         Assert.Equal(200, settings.HistoryLimit);
@@ -96,7 +96,7 @@ public class AppSettingsTests : IDisposable
     {
         var settings = new AppSettings(FilePath)
         {
-            SpeedPercent = 150,
+            SpeedPercent = 170,
             Volume = 40,
             Theme = ThemeChoice.Dark,
             ReadClipboardAutomatically = true,
@@ -105,7 +105,7 @@ public class AppSettingsTests : IDisposable
 
         var reloaded = new AppSettings(FilePath);
 
-        Assert.Equal(150, reloaded.SpeedPercent);
+        Assert.Equal(170, reloaded.SpeedPercent);
         Assert.Equal(40, reloaded.Volume);
         Assert.Equal(ThemeChoice.Dark, reloaded.Theme);
         Assert.True(reloaded.ReadClipboardAutomatically);
@@ -160,11 +160,11 @@ public class AppSettingsTests : IDisposable
     }
 
     [Fact]
-    public void A_file_without_a_speed_keeps_normal_speed()
+    public void A_file_without_a_speed_keeps_the_default_speed()
     {
         File.WriteAllText(FilePath, """{ "Volume": 70 }""");
 
-        Assert.Equal(100, new AppSettings(FilePath).SpeedPercent);
+        Assert.Equal(150, new AppSettings(FilePath).SpeedPercent);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public class AppSettingsTests : IDisposable
     {
         File.WriteAllText(FilePath, "{ this is not json");
 
-        Assert.Equal(100, new AppSettings(FilePath).SpeedPercent);
+        Assert.Equal(150, new AppSettings(FilePath).SpeedPercent);
     }
 
     [Fact]

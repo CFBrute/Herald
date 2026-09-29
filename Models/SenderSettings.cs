@@ -69,7 +69,7 @@ public class SenderSettings : ObservableObject
         set => SetField(ref _filterCharacters, value ?? string.Empty);
     }
 
-    public static readonly string DefaultFilterCharacters = "-_/\\\"" + (char)0x2013 + (char)0x2014;
+    public static readonly string DefaultFilterCharacters = "*-_/\\\"" + (char)0x2013 + (char)0x2014;
 
     /// <summary>
     /// Applied before character stripping. Edited from the UI thread while the speech

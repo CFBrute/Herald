@@ -293,12 +293,12 @@ public class SpeechEngineTests : IDisposable
     [Fact]
     public async Task Set_speed_changes_the_setting_and_says_the_new_speed()
     {
-        Speech.SetSpeed(150);
+        Speech.SetSpeed(170);
 
         await _h.HistoryCount(1);
-        Assert.Equal(150, _h.Settings.SpeedPercent);
-        Assert.Equal("Speed 150.", _h.History[0].Text);
-        Assert.EndsWith("Speed: 150%", _h.History[0].SynthesisInfo);
+        Assert.Equal(170, _h.Settings.SpeedPercent);
+        Assert.Equal("Speed 170.", _h.History[0].Text);
+        Assert.EndsWith("Speed: 170%", _h.History[0].SynthesisInfo);
     }
 
     [Fact]
