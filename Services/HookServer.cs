@@ -26,20 +26,26 @@ public class HookServer
 {
     public const int Port = 8766;
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private readonly SpeechEngine _engine;
+    private readonly AppSettings _settings;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _cts = new();
-
-    public event Action<string>? CommandReceived;
 
     /// <summary>Another Herald was started; it asks this one to bring its window forward.</summary>
     public event Action? ShowRequested;
 
-    public HookServer(SpeechEngine engine)
+    /// <param name="port">Herald's fixed <see cref="Port"/> unless given; 0 picks any free port.</param>
+    public HookServer(SpeechEngine engine, AppSettings settings, int port = Port)
     {
         _engine = engine;
-        _listener = new TcpListener(IPAddress.Loopback, Port);
+        _settings = settings;
+        _listener = new TcpListener(IPAddress.Loopback, port);
     }
+
+    /// <summary>The port actually listened on, once started.</summary>
+    public int ListeningPort => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
     public void Start()
     {
@@ -87,10 +93,7 @@ public class HookServer
             var line = await reader.ReadLineAsync(ct);
             if (line == null) return;
 
-            var command = JsonSerializer.Deserialize<Command>(line, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            var command = JsonSerializer.Deserialize<Command>(line, JsonOptions);
 
             if (command == null)
             {
@@ -98,7 +101,6 @@ public class HookServer
                 return;
             }
 
-            CommandReceived?.Invoke(command.Type ?? "unknown");
             var sender = string.IsNullOrWhiteSpace(command.Sender) ? "unknown" : command.Sender;
 
             switch (command.Type)
@@ -111,8 +113,7 @@ public class HookServer
                     break;
 
                 case "toggle":
-                    _engine.Enabled = !_engine.Enabled;
-                    _engine.Announce(_engine.Enabled ? "Activated" : "Off");
+                    _engine.ToggleEnabled();
                     break;
 
                 case "skip":
@@ -128,11 +129,7 @@ public class HookServer
                     break;
 
                 case "setspeed":
-                    if (command.Value.HasValue)
-                    {
-                        _engine.SpeedPercent = command.Value.Value;
-                        _engine.EnqueueText($"Speed {_engine.SpeedPercent}", "herald");
-                    }
+                    if (command.Value is { } speed) _engine.SetSpeed(speed);
                     break;
             }
 
@@ -140,7 +137,7 @@ public class HookServer
             {
                 status = "ok",
                 enabled = _engine.Enabled,
-                speed = _engine.SpeedPercent
+                speed = _settings.SpeedPercent
             }));
         }
         catch

@@ -12,11 +12,9 @@ namespace Herald;
 
 public partial class MainWindow : Window
 {
+    private readonly AppServices _services;
     private readonly SpeechEngine _engine;
-    private readonly HookServer _hookServer;
-    private readonly HotkeySettingsStore _hotkeySettings;
     private readonly HotkeyManager _hotkeyManager;
-    private readonly ClaudeCodeIntegration _claude;
     private readonly TrayIcon _tray;
     private SettingsWindow? _settingsWindow;
 
@@ -24,52 +22,48 @@ public partial class MainWindow : Window
     // otherwise closing the window only hides it to the tray.
     private bool _exiting;
 
-    public MainWindow(SpeechEngine engine, HookServer hookServer, HotkeySettingsStore hotkeySettings, ClaudeCodeIntegration claude)
+    public MainWindow(AppServices services)
     {
         InitializeComponent();
         // Once the window handle exists its DPI is known, so the clamp to the screen's
         // work area is right on high-scaling displays too.
         SourceInitialized += (_, _) => this.FitToScreen();
 
-        _engine = engine;
-        _hookServer = hookServer;
-        _hotkeySettings = hotkeySettings;
-        _claude = claude;
+        _services = services;
+        _engine = services.Speech;
         DataContext = _engine;
+        StatusText.Text = $"Listening on 127.0.0.1:{HookServer.Port}";
         ContentRendered += (_, _) => OfferClaudeConnection();
 
-        EnabledToggle.IsChecked = _engine.Enabled;
-        UpdateEnabledButton();
+        _hotkeyManager = new HotkeyManager(this, _engine, services.Hotkeys);
+        var clipboardWatcher = new ClipboardWatcher(this, _engine, services.Settings);
 
-        _hotkeyManager = new HotkeyManager(this, _engine, _hotkeySettings);
-        var clipboardWatcher = new ClipboardWatcher(this, _engine);
-
-        _hookServer.ShowRequested += () => Dispatcher.BeginInvoke(BringToFront);
-        // Enabled/SpeedPercent can also change via a global hotkey, which never goes
-        // through HookServer - keep the GUI in sync regardless of which path fired.
+        services.HookServer.ShowRequested += () => Dispatcher.BeginInvoke(BringToFront);
+        // Enabled can also change via a global hotkey or the hook server - keep the GUI
+        // in sync regardless of which path fired.
         _engine.PropertyChanged += OnEnginePropertyChanged;
-        Root.ApplyUiScale(_engine.UiScalePercent);
+        this.FollowUiScale(Root, services.Settings);
 
         _tray = new TrayIcon();
-        _tray.SetSpeechEnabled(_engine.Enabled);
         _tray.OpenRequested += BringToFront;
-        _tray.ToggleSpeechRequested += ToggleSpeech;
+        _tray.ToggleSpeechRequested += _engine.ToggleEnabled;
         _tray.SettingsRequested += () =>
         {
             BringToFront();
             OpenSettings();
         };
         _tray.ExitRequested += ExitHerald;
+        UpdateEnabledButton();
 
         Closing += (_, e) =>
         {
             if (_exiting) return;
             e.Cancel = true;
             Hide();
-            if (!_engine.TrayHintShown)
+            if (!services.Settings.TrayHintShown)
             {
                 _tray.ShowStillRunningHint();
-                _engine.TrayHintShown = true;
+                services.Settings.TrayHintShown = true;
             }
         };
         // Never block Windows from signing out or shutting down.
@@ -77,6 +71,7 @@ public partial class MainWindow : Window
 
         Closed += (_, _) =>
         {
+            _engine.PropertyChanged -= OnEnginePropertyChanged;
             _hotkeyManager.Dispose();
             clipboardWatcher.Dispose();
             _tray.Dispose();
@@ -90,12 +85,6 @@ public partial class MainWindow : Window
         Application.Current.Shutdown();
     }
 
-    private void ToggleSpeech()
-    {
-        _engine.Enabled = !_engine.Enabled;
-        _engine.Announce(_engine.Enabled ? "Activated" : "Off");
-    }
-
     private void OpenSettings()
     {
         if (_settingsWindow != null)
@@ -104,7 +93,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _settingsWindow = new SettingsWindow(_engine, _hotkeySettings, _hotkeyManager, _claude, _hookServer, ExitHerald) { Owner = this };
+        _settingsWindow = new SettingsWindow(_services, _hotkeyManager, ExitHerald) { Owner = this };
         try
         {
             _settingsWindow.ShowDialog();
@@ -121,10 +110,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void OfferClaudeConnection()
     {
-        _claude.UpdateHookScriptIfConnected();
-        if (!_engine.AskToConnectClaude) return;
+        var claude = _services.Claude;
+        claude.UpdateHookScriptIfConnected();
+        if (!_services.Settings.AskToConnectClaude) return;
 
-        var status = _claude.GetStatus();
+        var status = claude.GetStatus();
         if (status.State is not (ClaudeConnectionState.NotConnected or ClaudeConnectionState.ConnectedThroughOtherScript)) return;
 
         var dialog = new ClaudeConnectDialog(status.Summary, status.Detail) { Owner = this };
@@ -133,32 +123,11 @@ public partial class MainWindow : Window
         switch (dialog.Choice)
         {
             case ClaudeConnectChoice.Connect:
-                ConnectClaude(this, _claude);
+                ClaudeConnectDialog.Connect(this, claude);
                 break;
             case ClaudeConnectChoice.DontAskAgain:
-                _engine.AskToConnectClaude = false;
+                _services.Settings.AskToConnectClaude = false;
                 break;
-        }
-    }
-
-    /// <summary>Connects Claude Code and reports the result; shared with the settings page.</summary>
-    public static bool ConnectClaude(Window owner, ClaudeCodeIntegration claude)
-    {
-        try
-        {
-            var backup = claude.Connect();
-            MessageBox.Show(owner,
-                "Claude Code is now connected to Herald.\n\n" +
-                "New Claude Code sessions pick this up right away; an open session may need a restart.\n\n" +
-                $"The previous settings were saved as:\n{backup}",
-                "Connected", MessageBoxButton.OK, MessageBoxImage.Information);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(owner, "Couldn't update Claude Code's settings:\n\n" + ex.Message,
-                "Connect failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return false;
         }
     }
 
@@ -172,31 +141,21 @@ public partial class MainWindow : Window
 
     private void OnEnginePropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(SpeechEngine.UiScalePercent))
-        {
-            Dispatcher.BeginInvoke(() => Root.ApplyUiScale(_engine.UiScalePercent));
-            return;
-        }
-        if (e.PropertyName != nameof(SpeechEngine.Enabled)) return;
-
-        Dispatcher.BeginInvoke(() =>
-        {
-            EnabledToggle.IsChecked = _engine.Enabled;
-            UpdateEnabledButton();
-            _tray.SetSpeechEnabled(_engine.Enabled);
-        });
+        if (e.PropertyName == nameof(SpeechEngine.Enabled)) Dispatcher.BeginInvoke(UpdateEnabledButton);
     }
 
     private void EnabledToggle_Click(object sender, RoutedEventArgs e)
     {
-        _engine.Enabled = EnabledToggle.IsChecked == true;
-        _engine.Announce(_engine.Enabled ? "Activated" : "Off");
+        _engine.SetEnabled(EnabledToggle.IsChecked == true);
         UpdateEnabledButton();
     }
 
+    /// <summary>Shows the current on/off state on the toggle button and in the tray menu.</summary>
     private void UpdateEnabledButton()
     {
+        EnabledToggle.IsChecked = _engine.Enabled;
         EnabledToggle.Content = _engine.Enabled ? "Speech: ON" : "Speech: OFF";
+        _tray.SetSpeechEnabled(_engine.Enabled);
     }
 
     private void SkipButton_Click(object sender, RoutedEventArgs e)

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Herald.csproj" />
+  <Project Path="Herald.Tests/Herald.Tests.csproj" />
+</Solution>

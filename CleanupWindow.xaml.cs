@@ -3,34 +3,28 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using Herald.Services;
-using Herald.Services.Engines;
 
 namespace Herald;
 
 public partial class CleanupWindow : Window
 {
-    private readonly SpeechEngine _engine;
-    private readonly EngineRegistry _engines;
-    private readonly HookServer _hookServer;
-    private readonly ClaudeCodeIntegration _claude;
+    private readonly AppServices _services;
     private readonly Action _exitHerald;
 
-    public CleanupWindow(SpeechEngine engine, HookServer hookServer, ClaudeCodeIntegration claude, Action exitHerald)
+    public CleanupWindow(AppServices services, Action exitHerald)
     {
         InitializeComponent();
 
-        _engine = engine;
-        _engines = engine.Engines;
-        _hookServer = hookServer;
-        _claude = claude;
+        _services = services;
         _exitHerald = exitHerald;
 
-        var data = engine.AppDataDir;
+        var paths = services.Paths;
+        var claude = services.Claude;
         var hookState = claude.GetStatus().State;
         var hookConnected = hookState is ClaudeConnectionState.Connected or ClaudeConnectionState.ConnectedThroughOtherScript;
 
         ClaudeHookBox.Content = "Herald's hook in Claude Code's settings" + (hookConnected ? " (currently connected)" : " (not connected now)");
-        ClaudeHookBox.IsEnabled = hookConnected || Directory.Exists(Path.Combine(data, "integrations"));
+        ClaudeHookBox.IsEnabled = hookConnected || Directory.Exists(paths.IntegrationsDir);
         ClaudeHookBox.IsChecked = ClaudeHookBox.IsEnabled;
 
         ClaudeBackupBox.Content = "The backup of Claude Code's settings (settings.json.herald-backup)";
@@ -41,10 +35,10 @@ public partial class CleanupWindow : Window
         StartupBox.IsEnabled = StartupRegistration.IsEnabled;
         StartupBox.IsChecked = StartupBox.IsEnabled;
 
-        var historySize = HeraldCleanup.FolderSize(Path.Combine(data, "history"));
-        HistoryBox.Content = $"History: {engine.History.Count} items, {HeraldCleanup.Describe(historySize)} of audio";
+        var historySize = HeraldCleanup.FolderSize(paths.HistoryDir);
+        HistoryBox.Content = $"History: {services.Speech.History.Count} items, {HeraldCleanup.Describe(historySize)} of audio";
 
-        var enginesSize = HeraldCleanup.FolderSize(Path.Combine(data, "engines"));
+        var enginesSize = HeraldCleanup.FolderSize(paths.EnginesDir);
         EnginesBox.Content = $"Downloaded engines (Kokoro, Piper): {HeraldCleanup.Describe(enginesSize)}";
         EnginesBox.IsEnabled = enginesSize > 0;
         EnginesBox.IsChecked = EnginesBox.IsEnabled;
@@ -52,7 +46,7 @@ public partial class CleanupWindow : Window
         SettingsBox.Content = "Settings: senders and voices, language profiles, hotkeys, volume and other options";
         LogsBox.Content = "Logs: playback log and crash log";
 
-        DataFolderText.Text = $"Herald's data folder: {data}\nNot touched: the Herald program itself, and the old scripts in .claude\\scripts from before Herald existed.";
+        DataFolderText.Text = $"Herald's data folder: {paths.DataDir}\nNot touched: the Herald program itself, and the old scripts in .claude\\scripts from before Herald existed.";
     }
 
     private void Remove_Click(object sender, RoutedEventArgs e)
@@ -72,7 +66,7 @@ public partial class CleanupWindow : Window
         if (confirm != MessageBoxResult.Yes) return;
 
         RemoveButton.IsEnabled = false;
-        var log = HeraldCleanup.Run(options, _engine, _engines, _hookServer, _claude);
+        var log = HeraldCleanup.Run(options, _services);
 
         MessageBox.Show(this,
             (log.Count > 0 ? string.Join(Environment.NewLine, log) : "Nothing was selected.") +

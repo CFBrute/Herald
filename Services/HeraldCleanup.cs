@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using Herald.Services.Engines;
 
 namespace Herald.Services;
 
@@ -24,9 +23,6 @@ public record CleanupOptions(
 /// </summary>
 public static class HeraldCleanup
 {
-    public static string[] SettingsFiles => ["engine-settings.json", "sender-settings.json", "hotkeys.json", "language-profiles.json"];
-    public static string[] LogFiles => ["playback.log", "playback.old.log", "crash.log"];
-
     public static long FolderSize(string dir)
     {
         try
@@ -53,17 +49,17 @@ public static class HeraldCleanup
     /// Performs the cleanup. Stops speech, the hook server and the engines first so no
     /// file is still open. Returns one line per thing removed (or per failure).
     /// </summary>
-    public static List<string> Run(CleanupOptions options, SpeechEngine engine, EngineRegistry engines,
-                                   HookServer hookServer, ClaudeCodeIntegration claude)
+    public static List<string> Run(CleanupOptions options, AppServices services)
     {
         var log = new List<string>();
-        var data = engine.AppDataDir;
+        var paths = services.Paths;
+        var claude = services.Claude;
 
         // Release everything that holds files: playback, the Kokoro server, incoming text.
-        engine.Enabled = false;
-        hookServer.Stop();
-        engine.Dispose();
-        engines.Dispose();
+        services.Speech.Enabled = false;
+        services.HookServer.Stop();
+        services.Speech.Dispose();
+        services.Engines.Dispose();
         Thread.Sleep(500);
 
         if (options.ClaudeHook)
@@ -77,7 +73,7 @@ public static class HeraldCleanup
             {
                 log.Add("Couldn't update Claude Code's settings: " + ex.Message);
             }
-            DeleteDirectory(Path.Combine(data, "integrations"), "Herald's hook script", log);
+            DeleteDirectory(paths.IntegrationsDir, "Herald's hook script", log);
         }
 
         if (options.ClaudeBackup) DeleteFile(claude.BackupPath, "Claude Code settings backup", log);
@@ -97,29 +93,29 @@ public static class HeraldCleanup
 
         if (options.History)
         {
-            DeleteDirectory(Path.Combine(data, "history"), "History audio", log);
-            DeleteFile(Path.Combine(data, "history.json"), "History list", log);
+            DeleteDirectory(paths.HistoryDir, "History audio", log);
+            DeleteFile(paths.HistoryFile, "History list", log);
         }
 
-        if (options.Engines) DeleteDirectory(Path.Combine(data, "engines"), "Downloaded engines (Kokoro, Piper)", log);
+        if (options.Engines) DeleteDirectory(paths.EnginesDir, "Downloaded engines (Kokoro, Piper)", log);
 
         if (options.Settings)
         {
-            foreach (var file in SettingsFiles) DeleteFile(Path.Combine(data, file), file, log);
+            foreach (var file in paths.SettingsFiles) DeleteFile(file, Path.GetFileName(file), log);
         }
 
         if (options.Logs)
         {
-            foreach (var file in LogFiles) DeleteFile(Path.Combine(data, file), file, log);
+            foreach (var file in paths.LogFiles) DeleteFile(file, Path.GetFileName(file), log);
         }
 
         // The data folder itself goes once nothing is left in it.
         try
         {
-            if (Directory.Exists(data) && !Directory.EnumerateFileSystemEntries(data).Any())
+            if (Directory.Exists(paths.DataDir) && !Directory.EnumerateFileSystemEntries(paths.DataDir).Any())
             {
-                Directory.Delete(data);
-                log.Add($"Removed the empty data folder {data}.");
+                Directory.Delete(paths.DataDir);
+                log.Add($"Removed the empty data folder {paths.DataDir}.");
             }
         }
         catch (Exception ex)
@@ -158,9 +154,8 @@ public static class HeraldCleanup
                 log.Add($"Removed {label} ({size}).");
                 return;
             }
-            catch (Exception ex) when (attempt < 3)
+            catch when (attempt < 3)
             {
-                _ = ex;
                 Thread.Sleep(1000);
             }
             catch (Exception ex)

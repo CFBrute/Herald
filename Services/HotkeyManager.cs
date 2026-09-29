@@ -99,8 +99,7 @@ public class HotkeyManager : IDisposable
         switch (binding.Action)
         {
             case HotkeyAction.Toggle:
-                _engine.Enabled = !_engine.Enabled;
-                _engine.Announce(_engine.Enabled ? "Activated" : "Off");
+                _engine.ToggleEnabled();
                 break;
 
             case HotkeyAction.Stop:
@@ -116,8 +115,7 @@ public class HotkeyManager : IDisposable
                 break;
 
             case HotkeyAction.SetSpeed:
-                _engine.SpeedPercent = binding.SpeedValue ?? 100;
-                _engine.EnqueueText($"Speed {_engine.SpeedPercent}", "herald");
+                _engine.SetSpeed(binding.SpeedValue ?? 100);
                 break;
         }
     }
@@ -134,21 +132,7 @@ public class HotkeyManager : IDisposable
 
         await SelectionCopier.CopySelectionAsync();
 
-        var text = string.Empty;
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            try
-            {
-                text = Clipboard.ContainsText() ? Clipboard.GetText() : string.Empty;
-                break;
-            }
-            catch
-            {
-                // the app that just copied can still hold the clipboard open for a moment
-                await Task.Delay(50);
-            }
-        }
-
+        var text = await ClipboardWatcher.ReadTextAsync();
         if (string.IsNullOrWhiteSpace(text))
         {
             _engine.Announce("The clipboard has no text");

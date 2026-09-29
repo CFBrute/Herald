@@ -1,34 +1,35 @@
-using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using Herald.Models;
 using Herald.Services.Engines;
-using NAudio.CoreAudioApi;
-using NAudio.Wave;
 
 namespace Herald.Services;
 
-public class SpeechEngine : INotifyPropertyChanged, IDisposable
+/// <summary>
+/// The speech queue: cleans and splits incoming text, synthesizes each part (the next one
+/// while the current one plays), plays it, and keeps everything that arrived in History.
+/// </summary>
+public class SpeechEngine : ObservableObject, IDisposable
 {
-    public EngineRegistry Engines { get; }
-    private readonly string _historyDir;
-    public SenderSettingsStore SenderSettings { get; }
+    private readonly AppPaths _paths;
+    private readonly AppSettings _settings;
+    private readonly EngineRegistry _engines;
+    private readonly SenderSettingsStore _senders;
+    private readonly LanguageProfileStore _languages;
+    private readonly IAudioPlayer _player;
+
     private readonly Queue<QueueItem> _pending = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly SemaphoreSlim _signal = new(0);
     private readonly CancellationTokenSource _shutdownCts = new();
 
-    private QueueItem? _currentItem;
+    private volatile QueueItem? _currentItem;
     private volatile bool _skipRequested;
 
-    public ObservableCollection<QueueItem> Queue { get; } = new();
-    public ObservableCollection<QueueItem> History { get; } = new();
+    public ObservableCollection<QueueItem> Queue { get; } = [];
+    public ObservableCollection<QueueItem> History { get; } = [];
 
     private bool _enabled = true;
     public bool Enabled
@@ -36,10 +37,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         get => _enabled;
         set
         {
-            if (_enabled == value) return;
-            _enabled = value;
-            OnPropertyChanged(nameof(Enabled));
-            if (!value)
+            if (SetField(ref _enabled, value) && !value)
             {
                 Skip();
                 ClearQueue();
@@ -47,193 +45,21 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private int _speedPercent = 100;
-    public int SpeedPercent
+    public SpeechEngine(AppPaths paths, AppSettings settings, EngineRegistry engines, SenderSettingsStore senders,
+                        LanguageProfileStore languages, IAudioPlayer? player = null)
     {
-        get => _speedPercent;
-        set
-        {
-            var clamped = Math.Clamp(value, 100, 190);
-            if (_speedPercent == clamped) return;
-            _speedPercent = clamped;
-            OnPropertyChanged(nameof(SpeedPercent));
-            SaveSettings();
-        }
-    }
+        _paths = paths;
+        _settings = settings;
+        _engines = engines;
+        _senders = senders;
+        _languages = languages;
+        _player = player ?? new AudioPlayer();
 
-    private const int DefaultChunkThreshold = 300;
-    private const int DefaultChunkTargetLength = 250;
+        _player.Volume = _settings.Volume / 100f;
+        _settings.PropertyChanged += OnSettingChanged;
 
-    private int _chunkThreshold = DefaultChunkThreshold;
-    /// <summary>Messages longer than this many characters are split into parts.</summary>
-    public int ChunkThreshold
-    {
-        get => _chunkThreshold;
-        set
-        {
-            var clamped = Math.Clamp(value, 50, 5000);
-            if (_chunkThreshold == clamped) return;
-            _chunkThreshold = clamped;
-            OnPropertyChanged(nameof(ChunkThreshold));
-            SaveSettings();
-        }
-    }
-
-    private int _chunkTargetLength = DefaultChunkTargetLength;
-    /// <summary>Approximate size of each part, in characters.</summary>
-    public int ChunkTargetLength
-    {
-        get => _chunkTargetLength;
-        set
-        {
-            var clamped = Math.Clamp(value, 40, 2000);
-            if (_chunkTargetLength == clamped) return;
-            _chunkTargetLength = clamped;
-            OnPropertyChanged(nameof(ChunkTargetLength));
-            SaveSettings();
-        }
-    }
-
-    private const int DefaultHistoryLimit = 200;
-
-    private int _historyLimit = DefaultHistoryLimit;
-    /// <summary>How many History items (and their audio files) are kept; older ones are deleted.</summary>
-    public int HistoryLimit
-    {
-        get => _historyLimit;
-        set
-        {
-            var clamped = Math.Clamp(value, 10, 5000);
-            if (_historyLimit == clamped) return;
-            _historyLimit = clamped;
-            OnPropertyChanged(nameof(HistoryLimit));
-            SaveSettings();
-            TrimHistory();
-            SaveHistory();
-        }
-    }
-
-    private bool _askToConnectClaude = true;
-    /// <summary>Whether Herald asks at startup to connect Claude Code when it isn't connected.</summary>
-    public bool AskToConnectClaude
-    {
-        get => _askToConnectClaude;
-        set
-        {
-            if (_askToConnectClaude == value) return;
-            _askToConnectClaude = value;
-            OnPropertyChanged(nameof(AskToConnectClaude));
-            SaveSettings();
-        }
-    }
-
-    private int _uiScalePercent = 100;
-    /// <summary>
-    /// Size of everything inside Herald's windows, 70-130%. The Fluent theme's controls
-    /// are large on small high-DPI screens; this lets the user zoom the UI out (or in).
-    /// </summary>
-    public int UiScalePercent
-    {
-        get => _uiScalePercent;
-        set
-        {
-            var clamped = Math.Clamp(value, 70, 130);
-            if (_uiScalePercent == clamped) return;
-            _uiScalePercent = clamped;
-            OnPropertyChanged(nameof(UiScalePercent));
-            SaveSettings();
-        }
-    }
-
-    private int _volume = 100;
-    /// <summary>
-    /// Herald's own playback volume, 0-100%. Scales the audio Herald plays (all engines),
-    /// not the Windows volume. Applies to a part that's already playing too.
-    /// </summary>
-    public int Volume
-    {
-        get => _volume;
-        set
-        {
-            var clamped = Math.Clamp(value, 0, 100);
-            if (_volume == clamped) return;
-            _volume = clamped;
-            if (_currentReader is { } reader) reader.Volume = clamped / 100f;
-            OnPropertyChanged(nameof(Volume));
-            SaveSettings();
-        }
-    }
-
-    // The file being played right now, so a volume change is heard immediately.
-    private volatile AudioFileReader? _currentReader;
-
-    private ThemeChoice _theme = ThemeChoice.System;
-    /// <summary>Light, dark, or follow Windows (the default).</summary>
-    public ThemeChoice Theme
-    {
-        get => _theme;
-        set
-        {
-            if (_theme == value) return;
-            _theme = value;
-            OnPropertyChanged(nameof(Theme));
-            SaveSettings();
-        }
-    }
-
-    private bool _trayHintShown;
-    /// <summary>Whether the "Herald is still running in the tray" notice was ever shown.</summary>
-    public bool TrayHintShown
-    {
-        get => _trayHintShown;
-        set
-        {
-            if (_trayHintShown == value) return;
-            _trayHintShown = value;
-            SaveSettings();
-        }
-    }
-
-    private bool _readClipboardAutomatically;
-    /// <summary>Read any text copied to the clipboard (sender "clipboard"). Off by default.</summary>
-    public bool ReadClipboardAutomatically
-    {
-        get => _readClipboardAutomatically;
-        set
-        {
-            if (_readClipboardAutomatically == value) return;
-            _readClipboardAutomatically = value;
-            OnPropertyChanged(nameof(ReadClipboardAutomatically));
-            SaveSettings();
-        }
-    }
-
-    private readonly string _settingsFilePath;
-    private readonly string _historyFilePath;
-
-    /// <summary>Herald's own data folder (settings, history, engines).</summary>
-    public string AppDataDir { get; }
-    public string HistoryDir => _historyDir;
-
-    public LanguageProfileStore LanguageProfiles { get; }
-
-    public SpeechEngine(EngineRegistry engines, string historyDir, string appDataDir, SenderSettingsStore senderSettings,
-                        LanguageProfileStore languageProfiles)
-    {
-        Engines = engines;
-        AppDataDir = appDataDir;
-        LanguageProfiles = languageProfiles;
-        _historyDir = historyDir;
-        SenderSettings = senderSettings;
-        Directory.CreateDirectory(_historyDir);
-        Directory.CreateDirectory(appDataDir);
-        _settingsFilePath = Path.Combine(appDataDir, "engine-settings.json");
-        _historyFilePath = Path.Combine(appDataDir, "history.json");
-        LoadSettings();
         LoadHistory();
         DeleteUnreferencedAudio();
-
-        Engines.Kokoro.StartServerIfReady();
 
         var worker = new Thread(WorkerLoop)
         {
@@ -243,55 +69,40 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         worker.Start();
     }
 
-    private void LoadSettings()
+    private void OnSettingChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (!File.Exists(_settingsFilePath)) return;
-
-        try
+        switch (e.PropertyName)
         {
-            var json = File.ReadAllText(_settingsFilePath);
-            var dto = JsonSerializer.Deserialize<EngineSettingsDto>(json);
-            if (dto == null) return;
-
-            _speedPercent = Math.Clamp(dto.SpeedPercent, 100, 190);
-            // Files saved before splitting existed have no chunk values (read as 0).
-            if (dto.ChunkThreshold > 0) _chunkThreshold = Math.Clamp(dto.ChunkThreshold, 50, 5000);
-            if (dto.ChunkTargetLength > 0) _chunkTargetLength = Math.Clamp(dto.ChunkTargetLength, 40, 2000);
-            if (dto.HistoryLimit > 0) _historyLimit = Math.Clamp(dto.HistoryLimit, 10, 5000);
-            _askToConnectClaude = dto.AskToConnectClaude ?? true;
-            _readClipboardAutomatically = dto.ReadClipboardAutomatically ?? false;
-            _trayHintShown = dto.TrayHintShown ?? false;
-            if (Enum.TryParse<ThemeChoice>(dto.Theme, out var theme)) _theme = theme;
-            if (dto.Volume is { } volume) _volume = Math.Clamp(volume, 0, 100);
-            if (dto.UiScalePercent is { } scale) _uiScalePercent = Math.Clamp(scale, 70, 130);
-        }
-        catch
-        {
-            // corrupt or unreadable settings file - fall back to defaults
+            case nameof(AppSettings.Volume):
+                _player.Volume = _settings.Volume / 100f;
+                break;
+            case nameof(AppSettings.HistoryLimit):
+                RunOnUi(() =>
+                {
+                    TrimHistory();
+                    SaveHistory();
+                });
+                break;
         }
     }
 
-    private void SaveSettings()
+    /// <summary>Turns speech on or off and says so; "Off" is spoken even though speech just went off.</summary>
+    public void SetEnabled(bool enabled)
     {
-        try
-        {
-            var dto = new EngineSettingsDto(_speedPercent, _chunkThreshold, _chunkTargetLength, _historyLimit, _askToConnectClaude,
-                                            _readClipboardAutomatically, _trayHintShown, _theme.ToString(), _volume,
-                                            _uiScalePercent);
-            var json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_settingsFilePath, json);
-        }
-        catch
-        {
-            // best-effort persistence - a failed save shouldn't crash the app
-        }
+        Enabled = enabled;
+        Announce(enabled ? "Activated" : "Off");
     }
 
-    private record EngineSettingsDto(int SpeedPercent, int ChunkThreshold = 0, int ChunkTargetLength = 0, int HistoryLimit = 0,
-                                     bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null,
-                                     bool? TrayHintShown = null, string? Theme = null, int? Volume = null,
-                                     int? UiScalePercent = null);
+    public void ToggleEnabled() => SetEnabled(!Enabled);
 
+    /// <summary>Changes the speed and speaks the new value, so a hotkey press can be heard.</summary>
+    public void SetSpeed(int percent)
+    {
+        _settings.SpeedPercent = percent;
+        EnqueueText($"Speed {_settings.SpeedPercent}", "herald");
+    }
+
+    // Property names are part of history.json; keep them when renaming.
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
                                   string? Language = null, string? SynthesisInfo = null);
@@ -299,33 +110,22 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     /// <summary>Restores History from the last session. Runs on the UI thread at startup.</summary>
     private void LoadHistory()
     {
-        if (!File.Exists(_historyFilePath)) return;
-
-        try
+        var dtos = SafeFile.ReadJson<List<HistoryItemDto>>(_paths.HistoryFile) ?? [];
+        foreach (var dto in dtos.Take(_settings.HistoryLimit))
         {
-            var dtos = JsonSerializer.Deserialize<List<HistoryItemDto>>(File.ReadAllText(_historyFilePath));
-            if (dtos == null) return;
-
-            foreach (var dto in dtos.Take(_historyLimit))
+            History.Add(new QueueItem(dto.Text, dto.Sender)
             {
-                History.Add(new QueueItem(dto.Text, dto.Sender)
-                {
-                    Id = dto.Id,
-                    EnqueuedAt = dto.EnqueuedAt,
-                    AudioFilePath = LocateAudio(dto.AudioFilePath),
-                    Status = dto.Status,
-                    GroupId = dto.GroupId,
-                    PartIndex = dto.PartIndex,
-                    PartCount = dto.PartCount,
-                    IsCopy = dto.IsCopy,
-                    Language = dto.Language,
-                    SynthesisInfo = dto.SynthesisInfo
-                });
-            }
-        }
-        catch
-        {
-            // unreadable history file - start with an empty History
+                Id = dto.Id,
+                EnqueuedAt = dto.EnqueuedAt,
+                AudioFilePath = LocateAudio(dto.AudioFilePath),
+                Status = dto.Status,
+                GroupId = dto.GroupId,
+                PartIndex = dto.PartIndex,
+                PartCount = dto.PartCount,
+                IsCopy = dto.IsCopy,
+                Language = dto.Language,
+                SynthesisInfo = dto.SynthesisInfo
+            });
         }
 
         // Re-derive the alternating shading: flip whenever the message (group) changes.
@@ -353,30 +153,22 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         if (recordedPath == null) return null;
         if (File.Exists(recordedPath)) return recordedPath;
 
-        var moved = Path.Combine(_historyDir, Path.GetFileName(recordedPath));
+        var moved = Path.Combine(_paths.HistoryDir, Path.GetFileName(recordedPath));
         return File.Exists(moved) ? moved : null;
     }
 
     /// <summary>Saves History; must run on the UI thread, which owns the collection.</summary>
-    private void SaveHistory()
-    {
-        try
-        {
-            var dtos = History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
-                                                              i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
-                                                              i.Language, i.SynthesisInfo)).ToList();
-            File.WriteAllText(_historyFilePath, JsonSerializer.Serialize(dtos));
-        }
-        catch
-        {
-            // best-effort persistence
-        }
-    }
+    private void SaveHistory() =>
+        SafeFile.WriteJson(_paths.HistoryFile,
+                           History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
+                                                                  i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
+                                                                  i.Language, i.SynthesisInfo)).ToList(),
+                           indented: false);
 
     /// <summary>Drops the oldest History items beyond the limit, deleting their audio.</summary>
     private void TrimHistory()
     {
-        while (History.Count > _historyLimit)
+        while (History.Count > _settings.HistoryLimit)
         {
             var oldest = History[^1];
             History.RemoveAt(History.Count - 1);
@@ -393,7 +185,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         if (path == null) return;
         if (History.Any(i => i.AudioFilePath == path) || Queue.Any(i => i.PreparedAudioPath == path)) return;
 
-        try { File.Delete(path); } catch { }
+        SafeFile.TryDelete(path);
     }
 
     /// <summary>
@@ -403,15 +195,11 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     private void DeleteUnreferencedAudio()
     {
         var keep = new HashSet<string>(History.Select(i => i.AudioFilePath).OfType<string>(), StringComparer.OrdinalIgnoreCase);
-        var files = Directory.GetFiles(_historyDir, "*.wav");
+        var files = Directory.GetFiles(_paths.HistoryDir, "*.wav");
 
         Task.Run(() =>
         {
-            foreach (var file in files)
-            {
-                if (keep.Contains(file)) continue;
-                try { File.Delete(file); } catch { }
-            }
+            foreach (var file in files.Where(f => !keep.Contains(f))) SafeFile.TryDelete(file);
         });
     }
 
@@ -438,19 +226,19 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     {
         if (string.IsNullOrWhiteSpace(text)) return;
 
-        var settings = SenderSettings.GetOrCreate(sender);
+        var settings = _senders.GetOrCreate(sender);
         if (settings.Muted) return;
 
         var cleaned = TextFilter.Clean(text, settings.FilterCharacters, settings.ReplacementSnapshot);
         if (string.IsNullOrWhiteSpace(cleaned)) return;
 
-        var parts = TextChunker.Split(cleaned, ChunkThreshold, ChunkTargetLength);
+        var parts = TextChunker.Split(cleaned, _settings.ChunkThreshold, _settings.ChunkTargetLength);
         if (parts.Count == 0) return;
         var groupId = Guid.NewGuid();
         var band = NextBand();
         // Only look for the languages this sender has a voice rule for.
         var ruleLanguages = settings.LanguageRules.Select(r => r.LanguageName).ToHashSet();
-        var profiles = LanguageProfiles.Snapshot.Where(p => ruleLanguages.Contains(p.Name)).ToList();
+        var profiles = _languages.Snapshot.Where(p => ruleLanguages.Contains(p.Name)).ToList();
         var items = new List<QueueItem>(parts.Count);
         for (var i = 0; i < parts.Count; i++)
         {
@@ -466,6 +254,11 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             });
         }
 
+        Enqueue(items);
+    }
+
+    private void Enqueue(IReadOnlyList<QueueItem> items)
+    {
         lock (_lock)
         {
             foreach (var item in items) _pending.Enqueue(item);
@@ -484,7 +277,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     public void Skip()
     {
         _skipRequested = true;
-        StopPlayback();
+        _player.Stop();
     }
 
     /// <summary>Stops the current part and drops the remaining parts of the same message.</summary>
@@ -492,8 +285,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     {
         _skipRequested = true;
 
-        var current = _currentItem;
-        if (current != null)
+        if (_currentItem is { } current)
         {
             lock (_lock)
             {
@@ -516,7 +308,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             }
         }
 
-        StopPlayback();
+        _player.Stop();
         StartPrefetch();
     }
 
@@ -564,14 +356,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             PreparedAudioPath = source.AudioFilePath is { } path && File.Exists(path) ? path : null
         };
 
-        lock (_lock)
-        {
-            _pending.Enqueue(copy);
-        }
-
-        RunOnUi(() => Queue.Add(copy));
-        _signal.Release();
-        StartPrefetch();
+        Enqueue([copy]);
     }
 
     /// <summary>
@@ -581,12 +366,12 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     public async Task<bool> PreviewAsync(ITtsEngine engine, string voiceId, string text)
     {
         var path = Path.Combine(Path.GetTempPath(), $"herald-preview-{Guid.NewGuid():N}.wav");
-        if (!await engine.SynthesizeAsync(text, voiceId, SpeedPercent / 100.0, path, _shutdownCts.Token)) return false;
+        if (!await engine.SynthesizeAsync(text, voiceId, _settings.SpeedPercent / 100.0, path, _shutdownCts.Token)) return false;
 
         _ = Task.Run(() =>
         {
-            PlayFile(path);
-            try { File.Delete(path); } catch { }
+            _player.Play(path);
+            SafeFile.TryDelete(path);
         });
         return true;
     }
@@ -623,52 +408,69 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
 
             _skipRequested = false;
             _currentItem = item;
-
-            var outPath = AudioPathFor(item);
-
-            bool ok;
-            if (prepared != null)
+            try
             {
-                ok = prepared.GetAwaiter().GetResult();
+                PlayItem(item, prepared);
             }
-            else
+            catch
             {
-                item.Status = QueueItemStatus.Synthesizing;
-                ok = Synthesize(item, outPath).GetAwaiter().GetResult();
+                // One part going wrong must not end this thread, or nothing would be spoken again.
+                if (item.Status is not (QueueItemStatus.Done or QueueItemStatus.Skipped or QueueItemStatus.Failed))
+                {
+                    item.Status = QueueItemStatus.Failed;
+                    MoveToHistory(item);
+                }
             }
-
-            if (_skipRequested)
+            finally
             {
-                if (ok) item.AudioFilePath = outPath;
-                item.Status = QueueItemStatus.Skipped;
-                MoveToHistory(item);
                 _currentItem = null;
-                continue;
             }
-
-            if (!ok)
-            {
-                item.Status = QueueItemStatus.Failed;
-                MoveToHistory(item);
-                _currentItem = null;
-                continue;
-            }
-
-            item.AudioFilePath = outPath;
-            item.Status = QueueItemStatus.Playing;
-
-            // Synthesize the next part while this one plays, so parts follow each other
-            // without waiting for synthesis in between.
-            StartPrefetch();
-
-            var playback = PlayFile(outPath);
-            LogPlayback(item, outPath, playback);
-
-            item.Status = _skipRequested ? QueueItemStatus.Skipped : QueueItemStatus.Done;
-            MoveToHistory(item);
-
-            _currentItem = null;
         }
+    }
+
+    /// <summary>Synthesizes (unless prefetched) and plays one part, then moves it to History.</summary>
+    private void PlayItem(QueueItem item, Task<bool>? prepared)
+    {
+        var outPath = AudioPathFor(item);
+
+        bool ok;
+        if (prepared != null)
+        {
+            ok = prepared.GetAwaiter().GetResult();
+        }
+        else
+        {
+            item.Status = QueueItemStatus.Synthesizing;
+            ok = Synthesize(item, outPath).GetAwaiter().GetResult();
+        }
+
+        if (_skipRequested)
+        {
+            if (ok) item.AudioFilePath = outPath;
+            item.Status = QueueItemStatus.Skipped;
+            MoveToHistory(item);
+            return;
+        }
+
+        if (!ok)
+        {
+            item.Status = QueueItemStatus.Failed;
+            MoveToHistory(item);
+            return;
+        }
+
+        item.AudioFilePath = outPath;
+        item.Status = QueueItemStatus.Playing;
+
+        // Synthesize the next part while this one plays, so parts follow each other
+        // without waiting for synthesis in between.
+        StartPrefetch();
+
+        var playback = _player.Play(outPath);
+        LogPlayback(item, outPath, playback);
+
+        item.Status = _skipRequested ? QueueItemStatus.Skipped : QueueItemStatus.Done;
+        MoveToHistory(item);
     }
 
     // The next queued item being synthesized ahead of its turn. Guarded by _lock, since
@@ -677,19 +479,19 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     private Task<bool>? _prefetchTask;
 
     private string AudioPathFor(QueueItem item) =>
-        item.PreparedAudioPath ?? Path.Combine(_historyDir, $"{item.Id}.wav");
+        item.PreparedAudioPath ?? Path.Combine(_paths.HistoryDir, $"{item.Id}.wav");
 
     private Task<bool> Synthesize(QueueItem item, string outPath)
     {
         if (item.PreparedAudioPath != null) return Task.FromResult(File.Exists(item.PreparedAudioPath));
 
-        var senderSettings = SenderSettings.GetOrCreate(item.Sender);
+        var senderSettings = _senders.GetOrCreate(item.Sender);
         var spokenText = senderSettings.AnnounceSender && item.PartIndex == 1
             ? $"{item.Sender}: {item.Text}"
             : item.Text;
 
         var (engine, voiceId) = VoiceFor(item, senderSettings);
-        var speed = SpeedPercent;
+        var speed = _settings.SpeedPercent;
         var voiceName = engine.Voices.FirstOrDefault(v => v.Id == voiceId)?.DisplayName ?? voiceId;
         item.SynthesisInfo = $"Engine: {engine.DisplayName}\nVoice: {voiceName}\nSpeed: {speed}%";
         return engine.SynthesizeAsync(spokenText, voiceId, speed / 100.0, outPath, _shutdownCts.Token);
@@ -703,12 +505,12 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     {
         if (item.Language != null
             && senderSettings.LanguageRules.FirstOrDefault(r => r.LanguageName == item.Language) is { } rule
-            && Engines.Find(rule.EngineId) is { IsReady: true })
+            && _engines.Find(rule.EngineId) is { IsReady: true })
         {
-            return Engines.Resolve(rule.EngineId, rule.VoiceId);
+            return _engines.Resolve(rule.EngineId, rule.VoiceId);
         }
 
-        return Engines.Resolve(senderSettings.EngineId, senderSettings.VoiceId);
+        return _engines.Resolve(senderSettings.EngineId, senderSettings.VoiceId);
     }
 
     /// <summary>
@@ -775,127 +577,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         if (item.PreparedAudioPath != null) return;
 
         var path = AudioPathFor(item);
-        synthesis.ContinueWith(_ =>
-        {
-            try { File.Delete(path); } catch { }
-        });
-    }
-
-    /// <summary>
-    /// Plays a file and blocks until it ends or <see cref="StopPlayback"/> is called.
-    /// The player is only ever touched from this thread; other threads just signal it,
-    /// since calling Stop() on the player from another thread silently did nothing.
-    /// </summary>
-    private enum PlaybackEnd { Finished, Stopped, TimedOut, Stalled, Error }
-
-    private record PlaybackResult(PlaybackEnd End, TimeSpan Duration, TimeSpan Elapsed, string? Error = null, int Attempts = 1);
-
-    private PlaybackResult PlayFile(string path)
-    {
-        var stop = new ManualResetEventSlim(false);
-        _currentStop = stop;
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        var duration = TimeSpan.Zero;
-        try
-        {
-            using var reader = new AudioFileReader(path) { Volume = _volume / 100f };
-            _currentReader = reader;
-            duration = reader.TotalTime;
-
-            // Output through WASAPI (the modern Windows audio path). The older WaveOut now and
-            // then started a clip but never played it, silently waiting out its whole length.
-            // A clip whose playback doesn't move forward is started once more from the top.
-            const int maxAttempts = 2;
-            for (var attempt = 1; attempt <= maxAttempts; attempt++)
-            {
-                reader.Position = 0;
-                using var output = new WasapiOut(AudioClientShareMode.Shared, 100);
-                using var done = new ManualResetEventSlim(false);
-                Exception? playbackError = null;
-                output.PlaybackStopped += (_, e) =>
-                {
-                    playbackError = e.Exception;
-                    done.Set();
-                };
-
-                output.Init(reader);
-                output.Play();
-
-                var attemptStart = watch.Elapsed;
-                var lastPosition = -1L;
-                var lastMove = watch.Elapsed;
-                var stalled = false;
-
-                while (true)
-                {
-                    var signalled = WaitHandle.WaitAny([done.WaitHandle, stop.WaitHandle], 200);
-                    if (signalled == 0)
-                    {
-                        return playbackError != null
-                            ? new PlaybackResult(PlaybackEnd.Error, duration, watch.Elapsed, playbackError.Message, attempt)
-                            : new PlaybackResult(PlaybackEnd.Finished, duration, watch.Elapsed, Attempts: attempt);
-                    }
-                    if (signalled == 1)
-                    {
-                        output.Stop();
-                        return new PlaybackResult(PlaybackEnd.Stopped, duration, watch.Elapsed, Attempts: attempt);
-                    }
-
-                    var position = reader.Position;
-                    if (position != lastPosition)
-                    {
-                        lastPosition = position;
-                        lastMove = watch.Elapsed;
-                    }
-                    else if (position < reader.Length && watch.Elapsed - lastMove > TimeSpan.FromSeconds(1.5))
-                    {
-                        stalled = true;
-                        break;
-                    }
-
-                    // Safety net: never wait much longer than the clip itself.
-                    if (watch.Elapsed - attemptStart > duration + TimeSpan.FromSeconds(5)) break;
-                }
-
-                output.Stop();
-                done.Wait(TimeSpan.FromSeconds(1));
-                if (!stalled) return new PlaybackResult(PlaybackEnd.TimedOut, duration, watch.Elapsed, Attempts: attempt);
-            }
-
-            return new PlaybackResult(PlaybackEnd.Stalled, duration, watch.Elapsed, Attempts: maxAttempts);
-        }
-        catch (Exception ex)
-        {
-            return new PlaybackResult(PlaybackEnd.Error, duration, watch.Elapsed, ex.Message);
-        }
-        finally
-        {
-            _currentReader = null;
-            Interlocked.CompareExchange(ref _currentStop, null, stop);
-            stop.Dispose();
-        }
-    }
-
-    /// <summary>Loudest sample in a file (0 = silence, 1 = full scale), or -1 if unreadable.</summary>
-    private static float PeakLevel(string path)
-    {
-        try
-        {
-            using var reader = new AudioFileReader(path);
-            ISampleProvider samples = reader;
-            var buffer = new float[16384];
-            var peak = 0f;
-            int read;
-            while ((read = samples.Read(buffer.AsSpan())) > 0)
-            {
-                for (var i = 0; i < read; i++) peak = Math.Max(peak, Math.Abs(buffer[i]));
-            }
-            return peak;
-        }
-        catch
-        {
-            return -1;
-        }
+        synthesis.ContinueWith(_ => SafeFile.TryDelete(path));
     }
 
     /// <summary>
@@ -907,10 +589,10 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            var logPath = Path.Combine(AppDataDir, "playback.log");
+            var logPath = _paths.PlaybackLog;
             if (File.Exists(logPath) && new FileInfo(logPath).Length > 512 * 1024)
             {
-                File.Move(logPath, Path.Combine(AppDataDir, "playback.old.log"), overwrite: true);
+                File.Move(logPath, _paths.PlaybackOldLog, overwrite: true);
             }
 
             string voice;
@@ -920,7 +602,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
             }
             else
             {
-                var (engine, voiceId) = VoiceFor(item, SenderSettings.GetOrCreate(item.Sender));
+                var (engine, voiceId) = VoiceFor(item, _senders.GetOrCreate(item.Sender));
                 voice = $"{engine.Id}/{voiceId}";
             }
 
@@ -929,7 +611,7 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
                 $"{item.Sender} {item.PartIndex}/{item.PartCount}",
                 voice,
                 $"clip {result.Duration.TotalSeconds:0.0}s",
-                $"peak {PeakLevel(path):0.000}",
+                $"peak {AudioPlayer.PeakLevel(path):0.000}",
                 $"{result.End} after {result.Elapsed.TotalSeconds:0.0}s" + (result.Attempts > 1 ? $" (restarted, attempt {result.Attempts})" : string.Empty),
                 Path.GetFileName(path) + (result.Error != null ? " | error: " + result.Error : string.Empty));
             File.AppendAllText(logPath, line + Environment.NewLine);
@@ -938,13 +620,6 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
         {
             // diagnostics must never break playback
         }
-    }
-
-    private ManualResetEventSlim? _currentStop;
-
-    private void StopPlayback()
-    {
-        try { _currentStop?.Set(); } catch (ObjectDisposedException) { }
     }
 
     /// <summary>
@@ -974,13 +649,9 @@ public class SpeechEngine : INotifyPropertyChanged, IDisposable
 
     public void Dispose()
     {
+        _settings.PropertyChanged -= OnSettingChanged;
         _shutdownCts.Cancel();
         _signal.Release();
-        StopPlayback();
+        _player.Stop();
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

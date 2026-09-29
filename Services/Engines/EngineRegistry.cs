@@ -11,11 +11,11 @@ public class EngineRegistry : IDisposable
     public PiperEngine Piper { get; }
     public IReadOnlyList<ITtsEngine> All { get; }
 
-    public EngineRegistry(string appDataDir)
+    public EngineRegistry(string enginesDir)
     {
         Windows = new WindowsTtsEngine();
-        Kokoro = new KokoroEngine(appDataDir);
-        Piper = new PiperEngine(appDataDir);
+        Kokoro = new KokoroEngine(enginesDir);
+        Piper = new PiperEngine(enginesDir);
         All = [Windows, Kokoro, Piper];
     }
 

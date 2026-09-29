@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 
 namespace Herald.Models;
 
@@ -14,7 +13,7 @@ public enum QueueItemStatus
     Failed
 }
 
-public class QueueItem : INotifyPropertyChanged
+public class QueueItem : ObservableObject
 {
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Text { get; }
@@ -48,12 +47,7 @@ public class QueueItem : INotifyPropertyChanged
     public string? SynthesisInfo
     {
         get => _synthesisInfo;
-        set
-        {
-            if (_synthesisInfo == value) return;
-            _synthesisInfo = value;
-            OnPropertyChanged(nameof(SynthesisInfo));
-        }
+        set => SetField(ref _synthesisInfo, value);
     }
 
     /// <summary>
@@ -67,12 +61,7 @@ public class QueueItem : INotifyPropertyChanged
     public bool IsSelectingText
     {
         get => _isSelectingText;
-        set
-        {
-            if (_isSelectingText == value) return;
-            _isSelectingText = value;
-            OnPropertyChanged(nameof(IsSelectingText));
-        }
+        set => SetField(ref _isSelectingText, value);
     }
 
     /// <summary>
@@ -88,11 +77,7 @@ public class QueueItem : INotifyPropertyChanged
     public QueueItemStatus Status
     {
         get => _status;
-        set
-        {
-            _status = value;
-            OnPropertyChanged(nameof(Status));
-        }
+        set => SetField(ref _status, value);
     }
 
     public QueueItem(string text, string sender)
@@ -100,9 +85,4 @@ public class QueueItem : INotifyPropertyChanged
         Text = text;
         Sender = sender;
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

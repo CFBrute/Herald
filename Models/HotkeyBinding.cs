@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Windows.Input;
 
 namespace Herald.Models;
@@ -18,7 +17,7 @@ public enum HotkeyAction
 /// Windows only tells Herald when this exact combo fires, nothing else is observed).
 /// Id must stay stable across renames since it's the Win32 registration handle.
 /// </summary>
-public class HotkeyBinding : INotifyPropertyChanged
+public class HotkeyBinding : ObservableObject
 {
     public int Id { get; }
     public string Label { get; }
@@ -31,10 +30,7 @@ public class HotkeyBinding : INotifyPropertyChanged
         get => _modifiers;
         set
         {
-            if (_modifiers == value) return;
-            _modifiers = value;
-            OnPropertyChanged(nameof(Modifiers));
-            OnPropertyChanged(nameof(Display));
+            if (SetField(ref _modifiers, value)) OnPropertyChanged(nameof(Display));
         }
     }
 
@@ -44,10 +40,7 @@ public class HotkeyBinding : INotifyPropertyChanged
         get => _key;
         set
         {
-            if (_key == value) return;
-            _key = value;
-            OnPropertyChanged(nameof(Key));
-            OnPropertyChanged(nameof(Display));
+            if (SetField(ref _key, value)) OnPropertyChanged(nameof(Display));
         }
     }
 
@@ -64,9 +57,4 @@ public class HotkeyBinding : INotifyPropertyChanged
         _modifiers = modifiers;
         _key = key;
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

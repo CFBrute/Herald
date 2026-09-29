@@ -9,9 +9,9 @@
         <TextBlock TextWrapping="Wrap" Margin="0,8,0,0"
                    Text="Connecting adds a hook to Claude Code's settings (a backup of the old file is kept), so each block of Claude's reply is read aloud as it appears. You can disconnect again under Settings > Claude Code."/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Connect" Width="90" IsDefault="True" Click="Connect_Click"/>
-            <Button Content="Not now" Width="90" Margin="8,0,0,0" IsCancel="True" Click="NotNow_Click"/>
-            <Button Content="Don't ask again" Width="110" Margin="8,0,0,0" Click="DontAsk_Click"/>
+            <Button Content="Connect" MinWidth="90" IsDefault="True" Click="Connect_Click"/>
+            <Button Content="Not now" MinWidth="90" Margin="8,0,0,0" IsCancel="True" Click="NotNow_Click"/>
+            <Button Content="Don't ask again" MinWidth="110" Margin="8,0,0,0" Click="DontAsk_Click"/>
         </StackPanel>
     </StackPanel>
 </Window>

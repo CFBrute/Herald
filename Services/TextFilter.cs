@@ -13,7 +13,8 @@ public static class TextFilter
     private static readonly Regex CodeBlock = new(@"```[\s\S]*?```", RegexOptions.Compiled);
     private static readonly Regex InlineCode = new(@"`([^`]+)`", RegexOptions.Compiled);
     private static readonly Regex Bold = new(@"\*\*([^\*]+)\*\*", RegexOptions.Compiled);
-    private static readonly Regex Heading = new(@"#{1,6}\s*", RegexOptions.Compiled);
+    // Only a real Markdown heading ("## Title" at the start of a line), so "C#" keeps its '#'.
+    private static readonly Regex Heading = new(@"^[ \t]*#{1,6}[ \t]+", RegexOptions.Compiled | RegexOptions.Multiline);
     private static readonly Regex MarkdownLink = new(@"\[([^\]]+)\]\([^\)]+\)", RegexOptions.Compiled);
     // Line breaks are kept (collapsed to one) because the splitter uses them as cut points.
     private static readonly Regex LineBreaks = new(@"[ \t]*(\r?\n[ \t]*)+", RegexOptions.Compiled);

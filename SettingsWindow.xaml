@@ -25,31 +25,43 @@
                         </ComboBox>
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <TextBlock Text="Size of the interface" VerticalAlignment="Center" Width="190"/>
-                        <Slider Minimum="70" Maximum="130" Width="220" TickFrequency="5" IsSnapToTickEnabled="True"
-                                Value="{Binding UiScalePercent}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding UiScalePercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
-                        <TextBlock Text="Zoom Herald's windows out or in, e.g. for a small high-DPI screen" VerticalAlignment="Center"
-                                   TextWrapping="Wrap" Width="300" Foreground="{DynamicResource SubtleText}"/>
-                    </StackPanel>
+                    <!-- Slider rows: the hint on the right gets whatever width is left, and wraps. -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="190"/>
+                            <ColumnDefinition Width="220"/>
+                            <ColumnDefinition Width="55"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="8"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="16"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <TextBlock Text="Volume" VerticalAlignment="Center" Width="190"/>
-                        <Slider Minimum="0" Maximum="100" Width="220" TickFrequency="5" IsSnapToTickEnabled="True"
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Size of the interface" VerticalAlignment="Center"/>
+                        <Slider Grid.Row="0" Grid.Column="1" Minimum="70" Maximum="130" TickFrequency="5" IsSnapToTickEnabled="True"
+                                Value="{Binding UiScalePercent}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding UiScalePercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <TextBlock Grid.Row="0" Grid.Column="3" Text="Zoom Herald's windows out or in, e.g. for a small high-DPI screen"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Volume" VerticalAlignment="Center"/>
+                        <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
                                 Value="{Binding Volume}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding Volume, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
-                        <TextBlock Text="Herald's own sound only, not the Windows volume" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource SubtleText}"/>
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                        <TextBlock Text="Speed" VerticalAlignment="Center" Width="190"/>
-                        <Slider Minimum="100" Maximum="190" Width="220" TickFrequency="10" IsSnapToTickEnabled="True"
+                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Volume, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <TextBlock Grid.Row="2" Grid.Column="3" Text="Herald's own sound only, not the Windows volume"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Speed" VerticalAlignment="Center"/>
+                        <Slider Grid.Row="4" Grid.Column="1" Minimum="100" Maximum="190" TickFrequency="10" IsSnapToTickEnabled="True"
                                 Value="{Binding SpeedPercent}" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0" Width="45"/>
-                        <TextBlock Text="Also via the Alt+Shift+0-9 hotkeys" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource SubtleText}"/>
-                    </StackPanel>
+                        <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                        <TextBlock Grid.Row="4" Grid.Column="3" Text="Also via the Alt+Shift+0-9 hotkeys"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
+                    </Grid>
 
                     <TextBlock Margin="0,0,0,12" TextWrapping="Wrap"
                                Text="Long messages are split into parts at new lines, sentence ends, ';' and ':' (commas only in a very long stretch without any of those). The first part is kept short so speech starts quickly, and the next part is prepared while the current one plays."/>
@@ -112,7 +124,7 @@
                                                     ElementStyle="{StaticResource CenteredCheckBox}" EditingElementStyle="{StaticResource CenteredCheckBox}"/>
                             <DataGridCheckBoxColumn Header="Speak sender" Binding="{Binding AnnounceSender}" Width="110"
                                                     ElementStyle="{StaticResource CenteredCheckBox}" EditingElementStyle="{StaticResource CenteredCheckBox}"/>
-                            <DataGridTextColumn Header="Characters to strip before synthesis" Binding="{Binding FilterCharacters}" Width="*"/>
+                            <DataGridTextColumn Header="Characters to strip" Binding="{Binding FilterCharacters}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -120,44 +132,67 @@
                         <TextBlock Text="Add sender tag:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBox x:Name="NewSenderBox" Width="160" VerticalContentAlignment="Center"
                                  KeyDown="NewSenderBox_KeyDown"/>
-                        <Button Content="Add" Width="60" Margin="6,0,0,0" Click="AddSenderButton_Click"/>
+                        <Button Content="Add" MinWidth="60" Margin="6,0,0,0" Click="AddSenderButton_Click"/>
                     </StackPanel>
 
                     <StackPanel Grid.Row="3" Margin="0,14,0,0">
                         <TextBlock FontWeight="Bold" Text="Default voice for the selected sender" Margin="0,0,0,6"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Engine:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <ComboBox x:Name="EngineCombo" Width="200" DisplayMemberPath="DisplayName"
+                        <!-- One full-width row per picker: engine and voice names get long
+                             ("Swedish (Sweden) / Svenska - nst, medium"). -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Engine:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="EngineCombo" DisplayMemberPath="DisplayName"
                                       SelectionChanged="EngineCombo_SelectionChanged"/>
-                            <TextBlock Text="Voice:" VerticalAlignment="Center" Margin="12,0,6,0"/>
-                            <ComboBox x:Name="VoiceCombo" Width="230"
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Voice:" VerticalAlignment="Center" Margin="0,6,6,0"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="VoiceCombo" Margin="0,6,0,0"
                                       SelectionChanged="VoiceCombo_SelectionChanged"/>
-                            <Button x:Name="TestVoiceButton" Content="Test" Width="50" Margin="6,0,0,0"
+                            <Button Grid.Row="1" Grid.Column="2" x:Name="TestVoiceButton" Content="Test" MinWidth="50" Margin="6,6,0,0"
                                     Click="TestVoiceButton_Click"/>
-                        </StackPanel>
+                        </Grid>
                         <TextBlock x:Name="EngineHintText" Foreground="{DynamicResource WarningText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
 
                         <TextBlock FontWeight="Bold" Text="When a language is detected, use another voice" Margin="0,12,0,4"/>
                         <ItemsControl x:Name="LanguageRulesList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <TextBlock Text="{Binding Description}" VerticalAlignment="Center" Width="480" TextWrapping="Wrap"/>
-                                        <Button Content="Test" Width="50" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleTest_Click"/>
-                                        <Button Content="Remove" Width="60" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleRemove_Click"/>
-                                    </StackPanel>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <Button DockPanel.Dock="Right" Content="Remove" MinWidth="60" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleRemove_Click"/>
+                                        <Button DockPanel.Dock="Right" Content="Test" MinWidth="50" Margin="6,0,0,0" Tag="{Binding}" Click="LanguageRuleTest_Click"/>
+                                        <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    </DockPanel>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="If" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <ComboBox x:Name="RuleLanguageCombo" Width="110"/>
-                            <TextBlock Text="use" VerticalAlignment="Center" Margin="6,0,6,0"/>
-                            <ComboBox x:Name="RuleEngineCombo" Width="170" DisplayMemberPath="DisplayName"
+                        <!-- "If [language] use [engine]", then the voice on its own row, like the pickers above. -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="If" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="RuleLanguageCombo"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="use" VerticalAlignment="Center" Margin="6,0,6,0"/>
+                            <ComboBox Grid.Row="0" Grid.Column="3" x:Name="RuleEngineCombo" DisplayMemberPath="DisplayName"
                                       SelectionChanged="RuleEngineCombo_SelectionChanged"/>
-                            <ComboBox x:Name="RuleVoiceCombo" Width="200" Margin="6,0,0,0"/>
-                            <Button x:Name="RuleAddButton" Content="Add" Width="50" Margin="6,0,0,0" Click="LanguageRuleAdd_Click"/>
-                        </StackPanel>
+                            <ComboBox Grid.Row="1" Grid.Column="3" x:Name="RuleVoiceCombo" Margin="0,6,0,0"/>
+                            <Button Grid.Row="1" Grid.Column="4" x:Name="RuleAddButton" Content="Add" MinWidth="50" Margin="6,6,0,0" Click="LanguageRuleAdd_Click"/>
+                        </Grid>
                         <TextBlock x:Name="LanguageRuleHint" Foreground="{DynamicResource SubtleText}" TextWrapping="Wrap" Margin="0,4,0,0"
                                    Text="Languages and how they're detected are set up on the Languages tab."/>
                     </StackPanel>
@@ -207,7 +242,7 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Min matches" Binding="{Binding MinMatches}" Width="80"/>
+                            <DataGridTextColumn Header="Min matches" Binding="{Binding MinMatches}" Width="SizeToHeader"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -233,7 +268,7 @@
                                 <TextBlock x:Name="WindowsStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <Button Content="Add voices in Windows Settings..." Padding="8,2" Click="OpenWindowsSpeechSettings_Click"/>
-                                    <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
+                                    <Button Content="Refresh" MinWidth="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
                                 </StackPanel>
                             </StackPanel>
                         </GroupBox>
@@ -244,7 +279,7 @@
                                 <TextBlock x:Name="KokoroStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <Button x:Name="KokoroInstallButton" Content="Install" Padding="12,2" Click="KokoroInstall_Click"/>
-                                    <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
+                                    <Button Content="Refresh" MinWidth="70" Margin="6,0,0,0" Click="RefreshEngines_Click"/>
                                 </StackPanel>
                                 <TextBox x:Name="KokoroLog" Height="150" Margin="0,8,0,0" IsReadOnly="True"
                                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
@@ -258,19 +293,20 @@
                                 <TextBlock x:Name="PiperStatus" FontWeight="Bold" Margin="0,6,0,0" TextWrapping="Wrap"/>
 
                                 <TextBlock Text="Download a voice:" Margin="0,10,0,4"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="PiperLoadCatalogButton" Content="Show available voices" Padding="8,2"
+                                <!-- The voice lists take the width the buttons leave, so long names fit. -->
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Left" x:Name="PiperLoadCatalogButton" Content="Show available voices" Padding="8,2"
                                             Click="PiperLoadCatalog_Click"/>
-                                    <ComboBox x:Name="PiperCatalogCombo" Width="360" Margin="6,0,0,0" IsEnabled="False"/>
-                                    <Button x:Name="PiperDownloadButton" Content="Download" Padding="8,2" Margin="6,0,0,0"
+                                    <Button DockPanel.Dock="Right" x:Name="PiperDownloadButton" Content="Download" Padding="8,2" Margin="6,0,0,0"
                                             IsEnabled="False" Click="PiperDownload_Click"/>
-                                </StackPanel>
+                                    <ComboBox x:Name="PiperCatalogCombo" Margin="6,0,0,0" IsEnabled="False"/>
+                                </DockPanel>
 
                                 <TextBlock Text="Installed voices:" Margin="0,10,0,4"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <ComboBox x:Name="PiperInstalledCombo" Width="360" DisplayMemberPath="DisplayName"/>
-                                    <Button Content="Remove" Padding="8,2" Margin="6,0,0,0" Click="PiperRemove_Click"/>
-                                </StackPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Remove" Padding="8,2" Margin="6,0,0,0" Click="PiperRemove_Click"/>
+                                    <ComboBox x:Name="PiperInstalledCombo" DisplayMemberPath="DisplayName"/>
+                                </DockPanel>
 
                                 <TextBox x:Name="PiperLog" Height="120" Margin="0,8,0,0" IsReadOnly="True"
                                          TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
@@ -288,12 +324,12 @@
                                Text="Herald can read Claude Code's replies aloud as they appear. It does this with a hook in Claude Code's user settings (%USERPROFILE%\.claude\settings.json) that sends each block of text to Herald, tagged as the 'claude' sender."/>
                     <TextBlock x:Name="ClaudeSummary" FontWeight="Bold" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ClaudeDetail" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <WrapPanel Margin="0,12,0,0">
                         <Button x:Name="ClaudeConnectButton" Content="Connect" Padding="12,2" Click="ClaudeConnect_Click"/>
                         <Button x:Name="ClaudeDisconnectButton" Content="Disconnect" Padding="12,2" Margin="6,0,0,0" Click="ClaudeDisconnect_Click"/>
-                        <Button Content="Refresh" Width="70" Margin="6,0,0,0" Click="ClaudeRefresh_Click"/>
+                        <Button Content="Refresh" MinWidth="70" Margin="6,0,0,0" Click="ClaudeRefresh_Click"/>
                         <Button Content="Open settings.json" Padding="8,2" Margin="16,0,0,0" Click="ClaudeOpenSettings_Click"/>
-                    </StackPanel>
+                    </WrapPanel>
                     <CheckBox Content="Ask when Herald starts if Claude Code isn't connected" Margin="0,16,0,0"
                               IsChecked="{Binding AskToConnectClaude}"/>
                     <TextBlock TextWrapping="Wrap" Margin="0,12,0,0" Foreground="{DynamicResource SubtleText}"
@@ -328,22 +364,24 @@
 
             <TabItem Header="Files">
                 <DockPanel Margin="8">
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Width="480"
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <Button DockPanel.Dock="Right" Content="Refresh" MinWidth="70" Margin="10,0,0,0" VerticalAlignment="Center"
+                                Click="RefreshFiles_Click"/>
+                        <TextBlock VerticalAlignment="Center" TextWrapping="Wrap"
                                    Text="Files Herald reads and writes. Open shows a file in its default editor (scripts always open in Notepad, so they can't run by accident)."/>
-                        <Button Content="Refresh" Width="70" Margin="10,0,0,0" Click="RefreshFiles_Click"/>
-                    </StackPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0">
-                        <Button Content="Clean up..." Padding="12,2" Click="Cleanup_Click"/>
-                        <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap" Width="480"
+                    </DockPanel>
+                    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                        <Button DockPanel.Dock="Left" Content="Clean up..." Padding="12,2" VerticalAlignment="Center" Click="Cleanup_Click"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" TextWrapping="Wrap"
                                    Foreground="{DynamicResource SubtleText}"
                                    Text="Remove what Herald has created on this PC: its data folder, the Claude Code hook, the start-with-Windows entry. You choose what goes."/>
-                    </StackPanel>
+                    </DockPanel>
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="FilesList">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Margin="0,0,0,6">
+                                    <!-- Right margin: room for the scrollbar, which draws over the content. -->
+                                    <Grid Margin="0,0,12,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="170"/>
                                             <ColumnDefinition Width="*"/>
@@ -363,7 +401,7 @@
                                                 </Style>
                                             </TextBox.Style>
                                         </TextBox>
-                                        <Button Grid.Column="2" Content="Open" Width="55" Margin="6,0,0,0"
+                                        <Button Grid.Column="2" Content="Open" MinWidth="55" Margin="6,0,0,0"
                                                 IsEnabled="{Binding Exists}" Tag="{Binding}" Click="OpenFile_Click"/>
                                         <Button Grid.Column="3" Content="Show in folder" Padding="6,0" Margin="6,0,0,0"
                                                 Tag="{Binding}" Click="ShowInFolder_Click"/>

@@ -1,16 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Herald.Models;
 
 namespace Herald.Services.Engines;
 
@@ -23,7 +22,7 @@ public record PiperCatalogVoice(string Key, string Display, string LanguageName,
 /// Piper: fast local voices in many languages (including Swedish). Herald downloads the
 /// Piper program and each voice only when the user asks, into its own app-data folder.
 /// </summary>
-public class PiperEngine : ITtsEngine
+public class PiperEngine : ObservableObject, ITtsEngine
 {
     private const string ProgramUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
     private const string VoicesBaseUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/";
@@ -51,16 +50,12 @@ public class PiperEngine : ITtsEngine
     public bool IsBusy
     {
         get => _isBusy;
-        private set
-        {
-            _isBusy = value;
-            OnPropertyChanged(nameof(IsBusy));
-        }
+        private set => SetField(ref _isBusy, value);
     }
 
-    public PiperEngine(string appDataDir)
+    public PiperEngine(string enginesDir)
     {
-        _engineDir = Path.Combine(appDataDir, "engines", "piper");
+        _engineDir = Path.Combine(enginesDir, "piper");
         _voicesDir = Path.Combine(_engineDir, "voices");
         _catalogPath = Path.Combine(_engineDir, "voices.json");
         Refresh();
@@ -136,7 +131,7 @@ public class PiperEngine : ITtsEngine
     }
 
     /// <summary>Downloads the Piper program. Only runs when the user asks.</summary>
-    public async Task<bool> InstallProgramAsync(IProgress<string> log, CancellationToken ct)
+    private async Task<bool> InstallProgramAsync(IProgress<string> log, CancellationToken ct)
     {
         if (IsProgramInstalled)
         {
@@ -146,7 +141,7 @@ public class PiperEngine : ITtsEngine
 
         Directory.CreateDirectory(_engineDir);
         var zipPath = Path.Combine(_engineDir, "piper_windows_amd64.zip");
-        if (!await DownloadAsync(ProgramUrl, zipPath, "Piper program", log, ct)) return false;
+        if (!await Downloader.DownloadAsync(ProgramUrl, zipPath, "Piper program", log, ct)) return false;
 
         log.Report("Unpacking ...");
         var programDir = Path.Combine(_engineDir, "piper");
@@ -174,12 +169,12 @@ public class PiperEngine : ITtsEngine
         if (!File.Exists(_catalogPath))
         {
             Directory.CreateDirectory(_engineDir);
-            if (!await DownloadAsync(VoicesBaseUrl + "voices.json", _catalogPath, "voice list", log, ct)) return [];
+            if (!await Downloader.DownloadAsync(VoicesBaseUrl + "voices.json", _catalogPath, "voice list", log, ct)) return [];
         }
 
         var catalog = ReadCachedCatalog();
         Refresh();
-        return catalog.Values.OrderBy(v => v.LanguageName).ThenBy(v => v.Key).ToList();
+        return [.. catalog.Values.OrderBy(v => v.LanguageName).ThenBy(v => v.Key)];
     }
 
     /// <summary>Downloads one voice (model + config). Installs the program first if needed.</summary>
@@ -195,8 +190,8 @@ public class PiperEngine : ITtsEngine
             var model = Path.Combine(_voicesDir, voice.Key + ".onnx");
             var config = model + ".json";
 
-            if (!await DownloadAsync(VoicesBaseUrl + voice.ModelUrlPath + ".json", config, voice.Key + " config", log, ct)) return false;
-            if (!File.Exists(model) && !await DownloadAsync(VoicesBaseUrl + voice.ModelUrlPath, model, voice.Key, log, ct)) return false;
+            if (!await Downloader.DownloadAsync(VoicesBaseUrl + voice.ModelUrlPath + ".json", config, voice.Key + " config", log, ct)) return false;
+            if (!File.Exists(model) && !await Downloader.DownloadAsync(VoicesBaseUrl + voice.ModelUrlPath, model, voice.Key, log, ct)) return false;
 
             Refresh();
             log.Report($"Voice {voice.Key} is ready.");
@@ -223,7 +218,7 @@ public class PiperEngine : ITtsEngine
     {
         foreach (var file in new[] { key + ".onnx", key + ".onnx.json" })
         {
-            try { File.Delete(Path.Combine(_voicesDir, file)); } catch { }
+            SafeFile.TryDelete(Path.Combine(_voicesDir, file));
         }
         Refresh();
     }
@@ -271,58 +266,4 @@ public class PiperEngine : ITtsEngine
             : key;
         return new VoiceInfo(key, display, language);
     }
-
-    private static async Task<bool> DownloadAsync(string url, string target, string label, IProgress<string> log, CancellationToken ct)
-    {
-        log.Report($"Downloading {label} ...");
-        var partial = target + ".part";
-        try
-        {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-            using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                log.Report($"Download failed: HTTP {(int)response.StatusCode} for {url}");
-                return false;
-            }
-
-            var total = response.Content.Headers.ContentLength;
-            await using (var input = await response.Content.ReadAsStreamAsync(ct))
-            await using (var output = File.Create(partial))
-            {
-                var buffer = new byte[1 << 16];
-                long done = 0;
-                var lastReported = -1;
-                int read;
-                while ((read = await input.ReadAsync(buffer, ct)) > 0)
-                {
-                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
-                    done += read;
-                    if (total > 1_000_000)
-                    {
-                        var percent = (int)(done * 100 / total.Value);
-                        if (percent / 20 != lastReported / 20)
-                        {
-                            lastReported = percent;
-                            log.Report($"  {label}: {percent}%");
-                        }
-                    }
-                }
-            }
-
-            File.Move(partial, target, overwrite: true);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            log.Report($"Download failed: {ex.Message}");
-            try { File.Delete(partial); } catch { }
-            return false;
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

@@ -23,14 +23,16 @@ public class ClipboardWatcher : IDisposable
     private static DateTime _ignoreUntilUtc;
 
     private readonly SpeechEngine _engine;
+    private readonly AppSettings _settings;
     private readonly IntPtr _hwnd;
     private readonly HwndSource _source;
     private string? _lastText;
     private DateTime _lastTextUtc;
 
-    public ClipboardWatcher(Window window, SpeechEngine engine)
+    public ClipboardWatcher(Window window, SpeechEngine engine, AppSettings settings)
     {
         _engine = engine;
+        _settings = settings;
         _hwnd = new WindowInteropHelper(window).EnsureHandle();
         _source = HwndSource.FromHwnd(_hwnd)!;
         _source.AddHook(WndProc);
@@ -42,7 +44,7 @@ public class ClipboardWatcher : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
-        if (msg == WM_CLIPBOARDUPDATE && _engine.ReadClipboardAutomatically && DateTime.UtcNow >= _ignoreUntilUtc)
+        if (msg == WM_CLIPBOARDUPDATE && _settings.ReadClipboardAutomatically && DateTime.UtcNow >= _ignoreUntilUtc)
         {
             _ = ReadClipboardAsync();
         }
@@ -53,19 +55,7 @@ public class ClipboardWatcher : IDisposable
     {
         if (CopiedByHerald() || IsMarkedDoNotMonitor()) return;
 
-        string? text = null;
-        for (var attempt = 0; attempt < 5 && text == null; attempt++)
-        {
-            try
-            {
-                text = Clipboard.ContainsText() ? Clipboard.GetText() : string.Empty;
-            }
-            catch
-            {
-                // the copying app can still hold the clipboard open for a moment
-                await Task.Delay(50);
-            }
-        }
+        var text = await ReadTextAsync();
         if (string.IsNullOrWhiteSpace(text)) return;
 
         // Some apps put the same text on the clipboard several times per copy.
@@ -74,6 +64,27 @@ public class ClipboardWatcher : IDisposable
         _lastTextUtc = DateTime.UtcNow;
 
         _engine.EnqueueText(text, "clipboard");
+    }
+
+    /// <summary>
+    /// The clipboard's text, or empty when it has none (or stays locked). Must run on the
+    /// UI thread, which the clipboard API requires.
+    /// </summary>
+    public static async Task<string> ReadTextAsync()
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                return Clipboard.ContainsText() ? Clipboard.GetText() : string.Empty;
+            }
+            catch
+            {
+                // the app that just copied can still hold the clipboard open for a moment
+                await Task.Delay(50);
+            }
+        }
+        return string.Empty;
     }
 
     private static bool CopiedByHerald()

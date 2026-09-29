@@ -1,19 +1,15 @@
 using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Herald.Services;
 using Forms = System.Windows.Forms;
 
 namespace Herald;
 
 public static class WindowFitting
 {
-    /// <summary>
-    /// Shrinks a window's initial size so it fits the work area (screen minus taskbar) of
-    /// the monitor it will appear on - the owner's monitor, or the one with the mouse.
-    /// Small laptop screens at high scaling (e.g. 1280x800 at 150%) leave only ~850x500
-    /// logical pixels, less than the windows' designed sizes.
-    /// </summary>
     /// <summary>
     /// Scales everything inside the window (not the window frame) by the UI scale setting.
     /// A layout transform, so text stays crisp and layout reflows to the new size.
@@ -24,6 +20,32 @@ public static class WindowFitting
         content.LayoutTransform = Math.Abs(scale - 1) < 0.001 ? null : new ScaleTransform(scale, scale);
     }
 
+    /// <summary>
+    /// Applies the UI scale setting to a window's content now and whenever it changes,
+    /// until the window closes (so a closed window isn't kept alive by the settings).
+    /// </summary>
+    public static void FollowUiScale(this Window window, FrameworkElement content, AppSettings settings)
+    {
+        content.ApplyUiScale(settings.UiScalePercent);
+
+        void OnChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(AppSettings.UiScalePercent))
+            {
+                window.Dispatcher.BeginInvoke(() => content.ApplyUiScale(settings.UiScalePercent));
+            }
+        }
+
+        settings.PropertyChanged += OnChanged;
+        window.Closed += (_, _) => settings.PropertyChanged -= OnChanged;
+    }
+
+    /// <summary>
+    /// Shrinks a window's initial size so it fits the work area (screen minus taskbar) of
+    /// the monitor it will appear on - the owner's monitor, or the one with the mouse.
+    /// Small laptop screens at high scaling (e.g. 1280x800 at 150%) leave only ~850x500
+    /// logical pixels, less than the windows' designed sizes.
+    /// </summary>
     public static void FitToScreen(this Window window)
     {
         try

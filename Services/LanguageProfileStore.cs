@@ -1,10 +1,7 @@
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using Herald.Models;
 
 namespace Herald.Services;
@@ -18,15 +15,14 @@ public class LanguageProfileStore
     private readonly string _filePath;
     private volatile IReadOnlyList<CompiledLanguageProfile> _snapshot = [];
 
-    public ObservableCollection<LanguageProfile> Profiles { get; } = new();
+    public ObservableCollection<LanguageProfile> Profiles { get; } = [];
 
     /// <summary>Enabled profiles, frozen for use from the speech threads.</summary>
     public IReadOnlyList<CompiledLanguageProfile> Snapshot => _snapshot;
 
-    public LanguageProfileStore(string settingsDir)
+    public LanguageProfileStore(string filePath)
     {
-        Directory.CreateDirectory(settingsDir);
-        _filePath = Path.Combine(settingsDir, "language-profiles.json");
+        _filePath = filePath;
 
         if (!Load())
         {
@@ -51,56 +47,34 @@ public class LanguageProfileStore
         Changed();
     }
 
-    public CompiledLanguageProfile? Find(string? name) =>
-        name == null ? null : _snapshot.FirstOrDefault(p => p.Name == name);
-
     private void OnProfileChanged(object? sender, PropertyChangedEventArgs e) => Changed();
 
     private void Changed()
     {
-        _snapshot = Profiles.Where(p => p.Enabled && p.Name.Length > 0).Select(CompiledLanguageProfile.From).ToList();
+        _snapshot = [.. Profiles.Where(p => p.Enabled && p.Name.Length > 0).Select(CompiledLanguageProfile.From)];
         Save();
     }
 
+    /// <summary>False when there's no usable file yet.</summary>
     private bool Load()
     {
-        if (!File.Exists(_filePath)) return false;
+        if (SafeFile.ReadJson<List<ProfileDto>>(_filePath) is not { } dtos) return false;
 
-        try
+        foreach (var dto in dtos)
         {
-            var dtos = JsonSerializer.Deserialize<List<ProfileDto>>(File.ReadAllText(_filePath));
-            if (dtos == null) return false;
-
-            foreach (var dto in dtos)
+            Profiles.Add(new LanguageProfile
             {
-                Profiles.Add(new LanguageProfile
-                {
-                    Enabled = dto.Enabled,
-                    Name = dto.Name,
-                    Markers = dto.Markers,
-                    MinMatches = dto.MinMatches
-                });
-            }
-            return true;
+                Enabled = dto.Enabled,
+                Name = dto.Name,
+                Markers = dto.Markers,
+                MinMatches = dto.MinMatches
+            });
         }
-        catch
-        {
-            return false;
-        }
+        return true;
     }
 
-    private void Save()
-    {
-        try
-        {
-            var dtos = Profiles.Select(p => new ProfileDto(p.Enabled, p.Name, p.Markers, p.MinMatches)).ToList();
-            File.WriteAllText(_filePath, JsonSerializer.Serialize(dtos, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch
-        {
-            // best-effort persistence
-        }
-    }
+    private void Save() =>
+        SafeFile.WriteJson(_filePath, Profiles.Select(p => new ProfileDto(p.Enabled, p.Name, p.Markers, p.MinMatches)).ToList());
 
     private record ProfileDto(bool Enabled, string Name, string Markers, int MinMatches);
 }

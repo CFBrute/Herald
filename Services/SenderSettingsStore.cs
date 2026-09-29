@@ -2,9 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Windows;
 using Herald.Models;
 
 namespace Herald.Services;
@@ -17,44 +16,33 @@ namespace Herald.Services;
 public class SenderSettingsStore
 {
     private readonly string _filePath;
-    private readonly object _lock = new();
 
-    public ObservableCollection<SenderSettings> Senders { get; } = new();
+    // The lookup used from any thread. Senders (bound to the settings page) belongs to
+    // the UI thread and only ever gains entries, after they're added here.
+    private readonly Dictionary<string, SenderSettings> _byName = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Lock _lock = new();
 
-    public SenderSettingsStore(string settingsDir)
+    public ObservableCollection<SenderSettings> Senders { get; } = [];
+
+    public SenderSettingsStore(string filePath)
     {
-        Directory.CreateDirectory(settingsDir);
-        _filePath = Path.Combine(settingsDir, "sender-settings.json");
+        _filePath = filePath;
 
-        Load();
-
-        if (!Senders.Any(s => s.Sender.Equals("claude", StringComparison.OrdinalIgnoreCase)))
-        {
-            Senders.Add(new SenderSettings("claude"));
-        }
-        if (!Senders.Any(s => s.Sender.Equals("herald", StringComparison.OrdinalIgnoreCase)))
-        {
-            Senders.Add(new SenderSettings("herald"));
-        }
-
-        foreach (var s in Senders)
-        {
-            s.PropertyChanged += (_, _) => Save();
-        }
-        Senders.CollectionChanged += (_, e) =>
-        {
-            if (e.NewItems != null)
-            {
-                foreach (var item in e.NewItems.Cast<SenderSettings>())
-                {
-                    item.PropertyChanged += (_, _) => Save();
-                }
-            }
-            Save();
-        };
+        foreach (var loaded in Load()) Add(loaded);
+        if (!_byName.ContainsKey("claude")) Add(new SenderSettings("claude"));
+        if (!_byName.ContainsKey("herald")) Add(new SenderSettings("herald"));
 
         Save();
     }
+
+    private void Add(SenderSettings settings)
+    {
+        _byName[settings.Sender] = settings;
+        settings.PropertyChanged += OnSenderChanged;
+        Senders.Add(settings);
+    }
+
+    private void OnSenderChanged(object? sender, PropertyChangedEventArgs e) => Save();
 
     /// <summary>
     /// Looks up a sender's settings (case-insensitive), creating a new default
@@ -64,76 +52,56 @@ public class SenderSettingsStore
     {
         if (string.IsNullOrWhiteSpace(sender)) sender = "unknown";
 
+        SenderSettings created;
         lock (_lock)
         {
-            var existing = Senders.FirstOrDefault(s => s.Sender.Equals(sender, StringComparison.OrdinalIgnoreCase));
-            if (existing != null) return existing;
+            if (_byName.TryGetValue(sender, out var existing)) return existing;
 
-            var created = new SenderSettings(sender);
-            created.PropertyChanged += (_, _) => Save();
-
-            var app = System.Windows.Application.Current;
-            if (app != null)
-            {
-                app.Dispatcher.Invoke(() => Senders.Add(created));
-            }
-            else
-            {
-                Senders.Add(created);
-            }
-
-            return created;
+            created = new SenderSettings(sender);
+            _byName[sender] = created;
         }
+
+        created.PropertyChanged += OnSenderChanged;
+        Save();
+
+        // Never wait for the UI thread here: the caller may be a background thread while
+        // the UI thread is itself waiting for the lock above.
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess()) Senders.Add(created);
+        else dispatcher.BeginInvoke(() => Senders.Add(created));
+
+        return created;
     }
 
-    private void Load()
+    private IEnumerable<SenderSettings> Load()
     {
-        if (!File.Exists(_filePath)) return;
-
-        try
+        foreach (var dto in SafeFile.ReadJson<List<SenderSettingsDto>>(_filePath) ?? [])
         {
-            var json = File.ReadAllText(_filePath);
-            var dtos = JsonSerializer.Deserialize<List<SenderSettingsDto>>(json);
-            if (dtos == null) return;
+            if (string.IsNullOrWhiteSpace(dto.Sender)) continue;
+            var replacements = dto.Replacements?.Select(r => new ReplacementRule(r.Find, r.Replace));
 
-            foreach (var dto in dtos)
+            // Entries saved before engines were selectable were all spoken by Kokoro.
+            var engineId = dto.EngineId ?? "kokoro";
+            var voiceId = dto.EngineId == null ? "am_michael" : dto.VoiceId;
+
+            yield return new SenderSettings(dto.Sender, dto.Muted, dto.FilterCharacters, replacements, engineId, voiceId)
             {
-                if (string.IsNullOrWhiteSpace(dto.Sender)) continue;
-                var replacements = dto.Replacements?.Select(r => new ReplacementRule(r.Find, r.Replace));
-
-                // Entries saved before engines were selectable were all spoken by Kokoro.
-                var engineId = dto.EngineId ?? "kokoro";
-                var voiceId = dto.EngineId == null ? "am_michael" : dto.VoiceId;
-
-                Senders.Add(new SenderSettings(dto.Sender, dto.Muted, dto.FilterCharacters, replacements, engineId, voiceId)
-                {
-                    AnnounceSender = dto.AnnounceSender,
-                    LanguageRules = dto.LanguageRules?.Select(r => new LanguageVoiceRule(r.LanguageName, r.EngineId, r.VoiceId)).ToList() ?? []
-                });
-            }
-        }
-        catch
-        {
-            // corrupt or unreadable settings file - fall back to defaults
+                AnnounceSender = dto.AnnounceSender,
+                LanguageRules = dto.LanguageRules?.Select(r => new LanguageVoiceRule(r.LanguageName, r.EngineId, r.VoiceId)).ToList() ?? []
+            };
         }
     }
 
     private void Save()
     {
-        try
-        {
-            var dtos = Senders.Select(s => new SenderSettingsDto(
-                s.Sender, s.Muted, s.FilterCharacters, s.AnnounceSender,
-                s.ReplacementSnapshot.Select(r => new ReplacementDto(r.Find, r.Replace)).ToList(),
-                s.EngineId, s.VoiceId,
-                s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId)).ToList())).ToList();
-            var json = JsonSerializer.Serialize(dtos, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_filePath, json);
-        }
-        catch
-        {
-            // best-effort persistence - a failed save shouldn't crash the app
-        }
+        List<SenderSettings> senders;
+        lock (_lock) senders = [.. _byName.Values];
+
+        SafeFile.WriteJson(_filePath, senders.Select(s => new SenderSettingsDto(
+            s.Sender, s.Muted, s.FilterCharacters, s.AnnounceSender,
+            [.. s.ReplacementSnapshot.Select(r => new ReplacementDto(r.Find, r.Replace))],
+            s.EngineId, s.VoiceId,
+            [.. s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId))])).ToList());
     }
 
     private record SenderSettingsDto(string Sender, bool Muted, string FilterCharacters, bool AnnounceSender = false,

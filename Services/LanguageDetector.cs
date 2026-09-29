@@ -25,7 +25,7 @@ public sealed record CompiledLanguageProfile(
         return new CompiledLanguageProfile(
             profile.Name,
             markers.Where(m => m.Length > 1).ToHashSet(),
-            markers.Where(m => m.Length == 1).ToList(),
+            [.. markers.Where(m => m.Length == 1)],
             profile.MinMatches);
     }
 }
@@ -45,10 +45,13 @@ public static class LanguageDetector
     {
         var words = Word.Matches(text.ToLowerInvariant()).Select(m => m.Value).ToList();
 
-        return profiles
-            .Select(p => new LanguageMatch(p, words.Count(w => p.Words.Contains(w) || p.Letters.Any(l => w.Contains(l)))))
-            .OrderByDescending(m => m.Matches)
-            .ToList();
+        return
+        [
+            .. profiles
+                .Select(p =>
+                    new LanguageMatch(p, words.Count(w => p.Words.Contains(w) || p.Letters.Any(l => w.Contains(l)))))
+                .OrderByDescending(m => m.Matches)
+        ];
     }
 
     /// <summary>The best profile that reached its minimum, or null (use the sender's normal voice).</summary>

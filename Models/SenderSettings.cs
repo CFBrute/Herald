@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -11,7 +10,7 @@ namespace Herald.Models;
 /// message (e.g. "claude", "herald") - not verified. Each tag gets its own mute
 /// switch and its own set of characters to strip before synthesis.
 /// </summary>
-public class SenderSettings : INotifyPropertyChanged
+public class SenderSettings : ObservableObject
 {
     public string Sender { get; }
 
@@ -19,12 +18,7 @@ public class SenderSettings : INotifyPropertyChanged
     public bool Muted
     {
         get => _muted;
-        set
-        {
-            if (_muted == value) return;
-            _muted = value;
-            OnPropertyChanged(nameof(Muted));
-        }
+        set => SetField(ref _muted, value);
     }
 
     private bool _announceSender;
@@ -35,12 +29,7 @@ public class SenderSettings : INotifyPropertyChanged
     public bool AnnounceSender
     {
         get => _announceSender;
-        set
-        {
-            if (_announceSender == value) return;
-            _announceSender = value;
-            OnPropertyChanged(nameof(AnnounceSender));
-        }
+        set => SetField(ref _announceSender, value);
     }
 
     private string _engineId;
@@ -48,13 +37,7 @@ public class SenderSettings : INotifyPropertyChanged
     public string EngineId
     {
         get => _engineId;
-        set
-        {
-            var v = value ?? DefaultEngineId;
-            if (_engineId == v) return;
-            _engineId = v;
-            OnPropertyChanged(nameof(EngineId));
-        }
+        set => SetField(ref _engineId, value ?? DefaultEngineId);
     }
 
     private string _voiceId;
@@ -62,13 +45,7 @@ public class SenderSettings : INotifyPropertyChanged
     public string VoiceId
     {
         get => _voiceId;
-        set
-        {
-            var v = value ?? string.Empty;
-            if (_voiceId == v) return;
-            _voiceId = v;
-            OnPropertyChanged(nameof(VoiceId));
-        }
+        set => SetField(ref _voiceId, value ?? string.Empty);
     }
 
     public const string DefaultEngineId = "windows";
@@ -82,24 +59,14 @@ public class SenderSettings : INotifyPropertyChanged
     public IReadOnlyList<LanguageVoiceRule> LanguageRules
     {
         get => _languageRules;
-        set
-        {
-            _languageRules = value ?? [];
-            OnPropertyChanged(nameof(LanguageRules));
-        }
+        set => SetField(ref _languageRules, value ?? []);
     }
 
     private string _filterCharacters;
     public string FilterCharacters
     {
         get => _filterCharacters;
-        set
-        {
-            var v = value ?? string.Empty;
-            if (_filterCharacters == v) return;
-            _filterCharacters = v;
-            OnPropertyChanged(nameof(FilterCharacters));
-        }
+        set => SetField(ref _filterCharacters, value ?? string.Empty);
     }
 
     public static readonly string DefaultFilterCharacters = "-_/\\\"" + (char)0x2013 + (char)0x2014;
@@ -108,9 +75,9 @@ public class SenderSettings : INotifyPropertyChanged
     /// Applied before character stripping. Edited from the UI thread while the speech
     /// engine reads from other threads, so readers use <see cref="ReplacementSnapshot"/>.
     /// </summary>
-    public ObservableCollection<ReplacementRule> Replacements { get; } = new();
+    public ObservableCollection<ReplacementRule> Replacements { get; } = [];
 
-    private volatile ReplacementRule[] _replacementSnapshot = Array.Empty<ReplacementRule>();
+    private volatile ReplacementRule[] _replacementSnapshot = [];
     public IReadOnlyList<ReplacementRule> ReplacementSnapshot => _replacementSnapshot;
 
     public static ReplacementRule[] DefaultReplacements() =>
@@ -157,10 +124,5 @@ public class SenderSettings : INotifyPropertyChanged
     }
 
     private void RefreshSnapshot() =>
-        _replacementSnapshot = Replacements.Select(r => new ReplacementRule(r.Find, r.Replace)).ToArray();
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        _replacementSnapshot = [.. Replacements.Select(r => new ReplacementRule(r.Find, r.Replace))];
 }

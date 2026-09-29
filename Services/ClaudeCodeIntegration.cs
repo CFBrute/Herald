@@ -39,10 +39,11 @@ public class ClaudeCodeIntegration
     public string HookScriptPath => _hookScriptPath;
     private string HookCommand => $"powershell -NoProfile -ExecutionPolicy Bypass -File \"{_hookScriptPath}\"";
 
-    public ClaudeCodeIntegration(string appDataDir)
+    /// <param name="claudeDir">Claude Code's settings folder; the user's own (~\.claude) unless given.</param>
+    public ClaudeCodeIntegration(string hookScriptPath, string? claudeDir = null)
     {
-        _claudeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
-        _hookScriptPath = Path.Combine(appDataDir, "integrations", "claude-hook.ps1");
+        _claudeDir = claudeDir ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
+        _hookScriptPath = hookScriptPath;
     }
 
     public ClaudeStatus GetStatus()
@@ -137,7 +138,7 @@ public class ClaudeCodeIntegration
     private void MoveHookFromLegacyPath()
     {
         var legacyScript = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                        App.LegacyName, "integrations", "claude-hook.ps1");
+                                        AppPaths.LegacyName, "integrations", "claude-hook.ps1");
         if (string.Equals(legacyScript, _hookScriptPath, StringComparison.OrdinalIgnoreCase)) return;
 
         var root = ReadSettings();
@@ -172,7 +173,7 @@ public class ClaudeCodeIntegration
         RemoveHeraldHooks(hooks, "MessageDisplay");
         RemoveHeraldHooks(hooks, "Stop");
 
-        var messageDisplay = hooks["MessageDisplay"] as JsonArray ?? new JsonArray();
+        var messageDisplay = hooks["MessageDisplay"] as JsonArray ?? [];
         hooks["MessageDisplay"] = messageDisplay;
         messageDisplay.Add(new JsonObject
         {
@@ -238,14 +239,15 @@ public class ClaudeCodeIntegration
 
     /// <summary>Commands under an event that send to Herald: Herald's own hook, or any script mentioning its port.</summary>
     private List<string> HeraldCommands(JsonObject root, string eventName) =>
-        (root["hooks"]?[eventName] as JsonArray ?? [])
-            .OfType<JsonObject>()
-            .SelectMany(group => group["hooks"] as JsonArray ?? [])
-            .OfType<JsonObject>()
-            .Select(hook => hook["command"]?.GetValue<string>())
-            .OfType<string>()
-            .Where(IsHeraldCommand)
-            .ToList();
+    [
+        .. (root["hooks"]?[eventName] as JsonArray ?? [])
+        .OfType<JsonObject>()
+        .SelectMany(group => group["hooks"] as JsonArray ?? [])
+        .OfType<JsonObject>()
+        .Select(hook => hook["command"]?.GetValue<string>())
+        .OfType<string>()
+        .Where(IsHeraldCommand)
+    ];
 
     private void RemoveHeraldHooks(JsonObject hooks, string eventName)
     {

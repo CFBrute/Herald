@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Media.SpeechSynthesis;
+using Herald.Models;
 
 namespace Herald.Services.Engines;
 
@@ -14,7 +14,7 @@ namespace Herald.Services.Engines;
 /// Windows' own voices (the ones added under Settings > Time &amp; language > Speech).
 /// Always available, nothing to install from Herald's side.
 /// </summary>
-public class WindowsTtsEngine : ITtsEngine
+public class WindowsTtsEngine : ObservableObject, ITtsEngine
 {
     public string Id => "windows";
     public string DisplayName => "Windows voices";
@@ -36,10 +36,12 @@ public class WindowsTtsEngine : ITtsEngine
     {
         try
         {
-            Voices = SpeechSynthesizer.AllVoices
-                .Select(v => new VoiceInfo(v.Id, $"{v.DisplayName} ({v.Language})", v.Language))
-                .OrderBy(v => v.DisplayName)
-                .ToList();
+            Voices =
+            [
+                .. SpeechSynthesizer.AllVoices
+                    .Select(v => new VoiceInfo(v.Id, $"{v.DisplayName} ({v.Language})", v.Language))
+                    .OrderBy(v => v.DisplayName)
+            ];
             DefaultVoiceId = SpeechSynthesizer.DefaultVoice?.Id ?? Voices.FirstOrDefault()?.Id ?? string.Empty;
         }
         catch
@@ -83,9 +85,4 @@ public class WindowsTtsEngine : ITtsEngine
         }
         catch { }
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

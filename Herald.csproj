@@ -10,6 +10,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <!-- The exe's icon; windows without an Icon of their own use it too. -->
     <ApplicationIcon>Assets\Herald.ico</ApplicationIcon>
+    <!-- The test project lives in a subfolder; keep its files out of Herald itself. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);Herald.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

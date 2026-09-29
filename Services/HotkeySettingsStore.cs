@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Windows.Input;
 using Herald.Models;
 
@@ -17,12 +15,11 @@ public class HotkeySettingsStore
 {
     private readonly string _filePath;
 
-    public ObservableCollection<HotkeyBinding> Bindings { get; } = new();
+    public ObservableCollection<HotkeyBinding> Bindings { get; } = [];
 
-    public HotkeySettingsStore(string settingsDir)
+    public HotkeySettingsStore(string filePath)
     {
-        Directory.CreateDirectory(settingsDir);
-        _filePath = Path.Combine(settingsDir, "hotkeys.json");
+        _filePath = filePath;
 
         // The set of actions always comes from the defaults; the file only overrides the
         // keys. That way actions added in newer versions show up for existing users.
@@ -58,41 +55,19 @@ public class HotkeySettingsStore
 
     private void ApplySavedKeys()
     {
-        if (!File.Exists(_filePath)) return;
-
-        try
+        // A missing or corrupt file keeps the defaults.
+        foreach (var dto in SafeFile.ReadJson<List<HotkeyDto>>(_filePath) ?? [])
         {
-            var json = File.ReadAllText(_filePath);
-            var dtos = JsonSerializer.Deserialize<List<HotkeyDto>>(json);
-            if (dtos == null) return;
-
-            foreach (var dto in dtos)
-            {
-                var binding = Bindings.FirstOrDefault(b => b.Id == dto.Id);
-                if (binding == null) continue;
-                binding.Modifiers = (ModifierKeys)dto.Modifiers;
-                binding.Key = (Key)dto.Key;
-            }
-        }
-        catch
-        {
-            // corrupt or unreadable file - keep the defaults
+            var binding = Bindings.FirstOrDefault(b => b.Id == dto.Id);
+            if (binding == null) continue;
+            binding.Modifiers = (ModifierKeys)dto.Modifiers;
+            binding.Key = (Key)dto.Key;
         }
     }
 
-    private void Save()
-    {
-        try
-        {
-            var dtos = Bindings.Select(b => new HotkeyDto(b.Id, b.Label, b.Action.ToString(), b.SpeedValue, (int)b.Modifiers, (int)b.Key)).ToList();
-            var json = JsonSerializer.Serialize(dtos, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_filePath, json);
-        }
-        catch
-        {
-            // best-effort persistence - a failed save shouldn't crash the app
-        }
-    }
+    private void Save() =>
+        SafeFile.WriteJson(_filePath,
+                           Bindings.Select(b => new HotkeyDto(b.Id, b.Label, b.Action.ToString(), b.SpeedValue, (int)b.Modifiers, (int)b.Key)).ToList());
 
     private record HotkeyDto(int Id, string Label, string Action, int? SpeedValue, int Modifiers, int Key);
 }

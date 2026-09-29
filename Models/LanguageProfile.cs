@@ -1,4 +1,4 @@
-using System.ComponentModel;
+using System;
 
 namespace Herald.Models;
 
@@ -7,20 +7,20 @@ namespace Herald.Models;
 /// marker words (or words containing its marker letters, like "å") appear in it.
 /// Which voice to use then is decided per sender.
 /// </summary>
-public class LanguageProfile : INotifyPropertyChanged
+public class LanguageProfile : ObservableObject
 {
     private bool _enabled = true;
     public bool Enabled
     {
         get => _enabled;
-        set { if (_enabled != value) { _enabled = value; OnPropertyChanged(nameof(Enabled)); } }
+        set => SetField(ref _enabled, value);
     }
 
     private string _name = "New language";
     public string Name
     {
         get => _name;
-        set { var v = value ?? string.Empty; if (_name != v) { _name = v; OnPropertyChanged(nameof(Name)); } }
+        set => SetField(ref _name, value ?? string.Empty);
     }
 
     private string _markers = string.Empty;
@@ -28,22 +28,13 @@ public class LanguageProfile : INotifyPropertyChanged
     public string Markers
     {
         get => _markers;
-        set { var v = value ?? string.Empty; if (_markers != v) { _markers = v; OnPropertyChanged(nameof(Markers)); } }
+        set => SetField(ref _markers, value ?? string.Empty);
     }
 
     private int _minMatches = 3;
     public int MinMatches
     {
         get => _minMatches;
-        set
-        {
-            var v = value < 1 ? 1 : value;
-            if (_minMatches != v) { _minMatches = v; OnPropertyChanged(nameof(MinMatches)); }
-        }
+        set => SetField(ref _minMatches, Math.Max(1, value));
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

@@ -1,15 +1,14 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Herald.Models;
 
 namespace Herald.Services.Engines;
 
@@ -18,7 +17,7 @@ namespace Herald.Services.Engines;
 /// Nothing is installed until the user clicks Install: that creates a private Python
 /// environment and downloads the model files into Herald's own app-data folder.
 /// </summary>
-public class KokoroEngine : ITtsEngine, IDisposable
+public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
 {
     private const int Port = 8767;
     private const string ModelFileName = "kokoro-v1.0.onnx";
@@ -50,19 +49,15 @@ public class KokoroEngine : ITtsEngine, IDisposable
     public bool IsInstalling
     {
         get => _isInstalling;
-        private set
-        {
-            _isInstalling = value;
-            OnPropertyChanged(nameof(IsInstalling));
-        }
+        private set => SetField(ref _isInstalling, value);
     }
 
     public IReadOnlyList<VoiceInfo> Voices { get; } = BuildVoiceList();
     public string DefaultVoiceId => "am_michael";
 
-    public KokoroEngine(string appDataDir)
+    public KokoroEngine(string enginesDir)
     {
-        _engineDir = Path.Combine(appDataDir, "engines", "kokoro");
+        _engineDir = Path.Combine(enginesDir, "kokoro");
         _venvDir = Path.Combine(_engineDir, "venv");
         _modelDir = Path.Combine(_engineDir, "models");
         _serverScript = Path.Combine(_engineDir, "kokoro_server.py");
@@ -318,44 +313,7 @@ public class KokoroEngine : ITtsEngine, IDisposable
             return true;
         }
 
-        var url = ReleaseBaseUrl + fileName;
-        var partial = target + ".part";
-        log.Report($"Downloading {fileName} from {url} ...");
-
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            log.Report($"Download failed: HTTP {(int)response.StatusCode}.");
-            return false;
-        }
-
-        var total = response.Content.Headers.ContentLength;
-        await using (var input = await response.Content.ReadAsStreamAsync(ct))
-        await using (var output = File.Create(partial))
-        {
-            var buffer = new byte[1 << 16];
-            long done = 0;
-            var lastReported = -1;
-            int read;
-            while ((read = await input.ReadAsync(buffer, ct)) > 0)
-            {
-                await output.WriteAsync(buffer.AsMemory(0, read), ct);
-                done += read;
-                if (total > 0)
-                {
-                    var percent = (int)(done * 100 / total.Value);
-                    if (percent / 10 != lastReported / 10)
-                    {
-                        lastReported = percent;
-                        log.Report($"  {fileName}: {percent}%");
-                    }
-                }
-            }
-        }
-
-        File.Move(partial, target, overwrite: true);
-        return true;
+        return await Downloader.DownloadAsync(ReleaseBaseUrl + fileName, target, fileName, log, ct);
     }
 
     private static async Task<string?> FindBasePythonAsync(IProgress<string> log, CancellationToken ct)
@@ -467,19 +425,17 @@ public class KokoroEngine : ITtsEngine, IDisposable
             "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi", "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang"
         ];
 
-        return ids.Select(id =>
-        {
-            var (code, name) = Languages[id[0]];
-            var gender = id[1] == 'f' ? "female" : "male";
-            var display = char.ToUpper(id[3]) + id[4..];
-            return new VoiceInfo(id, $"{display} ({name}, {gender})", code);
-        }).ToList();
+        return
+        [
+            .. ids.Select(id =>
+            {
+                var (code, name) = Languages[id[0]];
+                var gender = id[1] == 'f' ? "female" : "male";
+                var display = char.ToUpper(id[3]) + id[4..];
+                return new VoiceInfo(id, $"{display} ({name}, {gender})", code);
+            })
+        ];
     }
 
     public void Dispose() => StopServer();
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged(string name) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }

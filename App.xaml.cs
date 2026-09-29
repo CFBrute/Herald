@@ -14,9 +14,7 @@ namespace Herald;
 
 public partial class App : Application
 {
-    private SpeechEngine? _engine;
-    private HookServer? _hookServer;
-    private EngineRegistry? _engines;
+    private AppServices? _services;
 
     // Held for the app's lifetime; its existence is how a second start knows Herald already runs.
     private static Mutex? _singleInstance;
@@ -35,30 +33,33 @@ public partial class App : Application
 
         StartupRegistration.RepairPath();
 
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appDataDir = UseDataFolder(Path.Combine(localAppData, "Herald"), Path.Combine(localAppData, LegacyName));
-        var historyDir = Path.Combine(appDataDir, "history");
+        var paths = AppPaths.ForCurrentUser();
 
         // WPF apps die silently on an unhandled exception; leave a trace to diagnose from.
-        var crashLog = Path.Combine(appDataDir, "crash.log");
-        DispatcherUnhandledException += (_, args) => LogCrash(crashLog, args.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, args) => LogCrash(crashLog, args.ExceptionObject as Exception);
+        DispatcherUnhandledException += (_, args) => LogCrash(paths.CrashLog, args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => LogCrash(paths.CrashLog, args.ExceptionObject as Exception);
 
-        var senderSettings = new SenderSettingsStore(appDataDir);
-        var hotkeySettings = new HotkeySettingsStore(appDataDir);
-        _engines = new EngineRegistry(appDataDir);
-        _engine = new SpeechEngine(_engines, historyDir, appDataDir, senderSettings, new LanguageProfileStore(appDataDir));
-        _hookServer = new HookServer(_engine);
-        _hookServer.Start();
+        var settings = new AppSettings(paths.AppSettingsFile);
+        var engines = new EngineRegistry(paths.EnginesDir);
+        var senders = new SenderSettingsStore(paths.SenderSettingsFile);
+        var languages = new LanguageProfileStore(paths.LanguageProfilesFile);
+        var speech = new SpeechEngine(paths, settings, engines, senders, languages);
+        var hookServer = new HookServer(speech, settings);
+        _services = new AppServices(paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
+                                    speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
+
+        // Loading the Kokoro model takes a few seconds; start now so the first message doesn't wait.
+        engines.Kokoro.StartServerIfReady();
+        hookServer.Start();
 
         // Herald keeps running in the tray when its window is closed; only Exit in the
         // tray menu (or Windows signing out) ends it.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // Before any window is created: the windows' styles are based on the theme.
-        ThemeManager.Apply(_engine.Theme);
+        ThemeManager.Apply(settings.Theme);
 
-        var window = new MainWindow(_engine, _hookServer, hotkeySettings, new ClaudeCodeIntegration(appDataDir));
+        var window = new MainWindow(_services);
         MainWindow = window;
 
         // Started with Windows: stay in the tray until the user opens it.
@@ -89,38 +90,6 @@ public partial class App : Application
     [DllImport("user32.dll")]
     private static extern bool AllowSetForegroundWindow(int processId);
 
-    /// <summary>Herald's name before it was renamed; its data folder is moved over once.</summary>
-    public const string LegacyName = "ClaudeSpeechService";
-
-    /// <summary>
-    /// Moves the old data folder (settings, history, installed engines) to Herald's folder
-    /// the first time. If that fails, keeps using the old folder rather than starting empty.
-    /// </summary>
-    private static string UseDataFolder(string appDataDir, string legacyDir)
-    {
-        if (Directory.Exists(appDataDir) || !Directory.Exists(legacyDir)) return appDataDir;
-
-        try
-        {
-            // A Kokoro server still running from the old folder would keep its files locked.
-            foreach (var process in System.Diagnostics.Process.GetProcessesByName("pythonw"))
-            {
-                try
-                {
-                    if (process.MainModule?.FileName.StartsWith(legacyDir, StringComparison.OrdinalIgnoreCase) == true) process.Kill();
-                }
-                catch { }
-            }
-
-            Directory.Move(legacyDir, appDataDir);
-            return appDataDir;
-        }
-        catch
-        {
-            return legacyDir;
-        }
-    }
-
     private static void LogCrash(string path, Exception? ex)
     {
         try
@@ -133,9 +102,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _hookServer?.Stop();
-        _engine?.Dispose();
-        _engines?.Dispose();
+        _services?.HookServer.Stop();
+        _services?.Speech.Dispose();
+        _services?.Engines.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }
