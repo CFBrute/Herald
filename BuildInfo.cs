@@ -28,7 +28,7 @@ public static class BuildInfo
     /// <summary>Shown in the main window: "v0.91.11 · 29f2105".</summary>
     public static string Label => Describe(Version, Commit);
 
-    /// <summary>The label's tooltip: when the build was made, and what the parts mean.</summary>
+    /// <summary>The label's tooltip: when the build was made, and what a "*" means.</summary>
     public static string Details => Explain(Commit, BuildTime);
 
     /// <summary>"0.91.11+29f2105*" into its version and commit.</summary>
@@ -45,7 +45,6 @@ public static class BuildInfo
     public static string Explain(string commit, string buildTime)
     {
         var lines = new List<string> { buildTime.Length > 0 ? $"Built {buildTime}" : "Build time unknown" };
-        if (commit.Length > 0) lines.Add($"From commit {commit.TrimEnd('*')}");
         if (commit.EndsWith('*')) lines.Add("* with changes that weren't committed yet");
         return string.Join("\n", lines);
     }

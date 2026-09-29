@@ -87,8 +87,8 @@ public class BuildInfoTests
     [Fact]
     public void The_tooltip_tells_when_it_was_built_and_what_the_star_means()
     {
-        Assert.Equal("Built 2026-09-29 17:50\nFrom commit 29f2105", BuildInfo.Explain("29f2105", "2026-09-29 17:50"));
-        Assert.Equal("Built 2026-09-29 17:50\nFrom commit 29f2105\n* with changes that weren't committed yet",
+        Assert.Equal("Built 2026-09-29 17:50", BuildInfo.Explain("29f2105", "2026-09-29 17:50"));
+        Assert.Equal("Built 2026-09-29 17:50\n* with changes that weren't committed yet",
                      BuildInfo.Explain("29f2105*", "2026-09-29 17:50"));
         Assert.Equal("Build time unknown", BuildInfo.Explain("", ""));
     }
