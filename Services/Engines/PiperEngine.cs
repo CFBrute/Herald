@@ -53,8 +53,11 @@ public class PiperEngine : ObservableObject, ITtsEngine
         private set => SetField(ref _isBusy, value);
     }
 
-    public PiperEngine(string enginesDir)
+    private readonly AppLog? _log;
+
+    public PiperEngine(string enginesDir, AppLog? log = null)
     {
+        _log = log;
         _engineDir = Path.Combine(enginesDir, "piper");
         _voicesDir = Path.Combine(_engineDir, "voices");
         _catalogPath = Path.Combine(_engineDir, "voices.json");
@@ -85,9 +88,17 @@ public class PiperEngine : ObservableObject, ITtsEngine
 
     public async Task<bool> SynthesizeAsync(string text, string voiceId, double speed, string outPath, CancellationToken ct)
     {
-        if (!IsProgramInstalled) return false;
+        if (!IsProgramInstalled)
+        {
+            _log?.Write("piper", "Piper isn't installed");
+            return false;
+        }
         var model = Path.Combine(_voicesDir, voiceId + ".onnx");
-        if (!File.Exists(model)) return false;
+        if (!File.Exists(model))
+        {
+            _log?.Write("piper", $"Voice {voiceId} isn't installed ({model} is missing)");
+            return false;
+        }
 
         try
         {
@@ -122,10 +133,20 @@ public class PiperEngine : ObservableObject, ITtsEngine
 
             await process.WaitForExitAsync(ct);
             await Task.WhenAll(stdout, stderr);
-            return process.ExitCode == 0 && File.Exists(outPath);
+            if (process.ExitCode == 0 && File.Exists(outPath)) return true;
+
+            _log?.Write("piper", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}: exit code {process.ExitCode}" +
+                                 (File.Exists(outPath) ? "" : ", no audio written") +
+                                 (string.IsNullOrWhiteSpace(stderr.Result) ? "" : Environment.NewLine + "    " + stderr.Result.Trim()));
+            return false;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _log?.Write("piper", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}", ex);
             return false;
         }
     }

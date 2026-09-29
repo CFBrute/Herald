@@ -19,6 +19,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     private readonly SenderSettingsStore _senders;
     private readonly LanguageProfileStore _languages;
     private readonly IAudioPlayer _player;
+    private readonly AppLog? _log;
 
     private readonly Queue<QueueItem> _pending = new();
     private readonly Lock _lock = new();
@@ -46,8 +47,9 @@ public class SpeechEngine : ObservableObject, IDisposable
     }
 
     public SpeechEngine(AppPaths paths, AppSettings settings, EngineRegistry engines, SenderSettingsStore senders,
-                        LanguageProfileStore languages, IAudioPlayer? player = null)
+                        LanguageProfileStore languages, IAudioPlayer? player = null, AppLog? log = null)
     {
+        _log = log;
         _paths = paths;
         _settings = settings;
         _engines = engines;
@@ -95,17 +97,63 @@ public class SpeechEngine : ObservableObject, IDisposable
 
     public void ToggleEnabled() => SetEnabled(!Enabled);
 
-    /// <summary>Changes the speed and speaks the new value, so a hotkey press can be heard.</summary>
+    /// <summary>How much one Faster/Slower hotkey press changes the speed, in percent.</summary>
+    public const int SpeedStep = 10;
+
+    /// <summary>Changes the speed and speaks the new value, so the change can be heard.</summary>
     public void SetSpeed(int percent)
     {
         _settings.SpeedPercent = percent;
-        EnqueueText($"Speed {_settings.SpeedPercent}", "herald");
+        AnnounceSpeed($"Speed {_settings.SpeedPercent}");
+    }
+
+    /// <summary>
+    /// One step faster or slower (the Faster/Slower hotkeys); at the limit it says so,
+    /// so it's clear why nothing changed.
+    /// </summary>
+    public void ChangeSpeed(int delta)
+    {
+        var before = _settings.SpeedPercent;
+        _settings.SpeedPercent = before + delta;
+        var now = _settings.SpeedPercent;
+        AnnounceSpeed(now == before && delta != 0
+            ? $"Speed {now}, {(delta > 0 ? "fastest" : "slowest")}"
+            : $"Speed {now}");
+    }
+
+    /// <summary>
+    /// Speaks the speed, replacing any speed announcement that hasn't finished: pressing
+    /// Faster five times says only the final speed, not all five in turn. One that hasn't
+    /// started is dropped without a trace; one that's playing is cut short and then
+    /// replaced in History by the new one (see <see cref="MoveToHistory"/>).
+    /// </summary>
+    private void AnnounceSpeed(string text)
+    {
+        if (!Enabled) return;
+
+        lock (_lock)
+        {
+            var keep = new List<QueueItem>();
+            while (_pending.Count > 0)
+            {
+                var pending = _pending.Dequeue();
+                if (pending.IsSpeedAnnouncement) RunOnUi(() => Queue.Remove(pending));
+                else keep.Add(pending);
+            }
+            foreach (var pending in keep) _pending.Enqueue(pending);
+            // Deletes the audio of a dropped announcement that was already being made.
+            DropStalePrefetchLocked();
+        }
+        if (_currentItem is { IsSpeedAnnouncement: true }) Skip();
+
+        EnqueueInternal(text, "herald", playWhenDisabled: false, speedAnnouncement: true);
     }
 
     // Property names are part of history.json; keep them when renaming.
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
-                                  string? Language = null, string? SynthesisInfo = null, string? SpokenText = null);
+                                  string? Language = null, string? SynthesisInfo = null, string? SpokenText = null,
+                                  bool ShowAsMarkdown = false);
 
     /// <summary>Restores History from the last session. Runs on the UI thread at startup.</summary>
     private void LoadHistory()
@@ -125,19 +173,29 @@ public class SpeechEngine : ObservableObject, IDisposable
                 PartCount = dto.PartCount,
                 IsCopy = dto.IsCopy,
                 Language = dto.Language,
-                SynthesisInfo = dto.SynthesisInfo
+                SynthesisInfo = dto.SynthesisInfo,
+                ShowAsMarkdown = dto.ShowAsMarkdown
             });
         }
 
-        // Re-derive the alternating shading: flip whenever the message (group) changes.
-        var band = 0;
-        for (var i = 0; i < History.Count; i++)
-        {
-            if (i > 0 && History[i].GroupId != History[i - 1].GroupId) band ^= 1;
-            History[i].Band = band;
-        }
+        RefreshBands();
         // New messages continue with the shade opposite to the newest one in History.
         _bandCounter = History.Count > 0 ? History[0].Band : 1;
+    }
+
+    /// <summary>
+    /// Re-derives the alternating shading: flips whenever the message (group) changes,
+    /// keeping the newest item's shade so only items below a change can switch.
+    /// </summary>
+    private void RefreshBands()
+    {
+        if (History.Count == 0) return;
+        var band = History[0].Band;
+        for (var i = 1; i < History.Count; i++)
+        {
+            if (History[i].GroupId != History[i - 1].GroupId) band ^= 1;
+            History[i].Band = band;
+        }
     }
 
     private int _bandCounter;
@@ -163,7 +221,8 @@ public class SpeechEngine : ObservableObject, IDisposable
         SafeFile.WriteJson(_paths.HistoryFile,
                            History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
                                                                   i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
-                                                                  i.Language, i.SynthesisInfo, i.SpokenText)).ToList(),
+                                                                  i.Language, i.SynthesisInfo, i.SpokenText,
+                                                                  i.ShowAsMarkdown)).ToList(),
                            indented: false);
 
     /// <summary>Drops the oldest History items beyond the limit, deleting their audio.</summary>
@@ -223,7 +282,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     public void EnqueueRequested(string text, string sender) => EnqueueInternal(text, sender, playWhenDisabled: true);
 
-    private void EnqueueInternal(string text, string sender, bool playWhenDisabled)
+    private void EnqueueInternal(string text, string sender, bool playWhenDisabled, bool speedAnnouncement = false)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
 
@@ -251,7 +310,9 @@ public class SpeechEngine : ObservableObject, IDisposable
             {
                 // Detected per part, so a mixed message can switch voice part by part.
                 Language = LanguageDetector.Detect(parts[i].Spoken, profiles)?.Name,
+                ShowAsMarkdown = settings.ShowAsMarkdown,
                 PlayWhenDisabled = playWhenDisabled,
+                IsSpeedAnnouncement = speedAnnouncement,
                 GroupId = groupId,
                 Band = band,
                 PartIndex = i + 1,
@@ -344,6 +405,18 @@ public class SpeechEngine : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Removes some items from History along with their audio (unless a queued "Play
+    /// again" copy still needs it). Expected to be called from the UI thread.
+    /// </summary>
+    public void DeleteFromHistory(IReadOnlyCollection<QueueItem> items)
+    {
+        foreach (var item in items) History.Remove(item);
+        foreach (var path in items.Select(i => i.AudioFilePath).Distinct()) DeleteAudioIfUnused(path);
+        RefreshBands();
+        SaveHistory();
+    }
+
+    /// <summary>
     /// Puts a copy of an earlier item back in the queue. Reuses its audio when that still
     /// exists, and plays even if speech is off, since the user asked for it directly.
     /// </summary>
@@ -353,6 +426,7 @@ public class SpeechEngine : ObservableObject, IDisposable
         {
             PlayWhenDisabled = true,
             IsCopy = true,
+            ShowAsMarkdown = source.ShowAsMarkdown,
             Band = NextBand(),
             Language = source.Language,
             // The audio is reused, so the original voice and speed still apply.
@@ -417,8 +491,9 @@ public class SpeechEngine : ObservableObject, IDisposable
             {
                 PlayItem(item, prepared);
             }
-            catch
+            catch (Exception ex)
             {
+                _log?.Write("speech", $"Something went wrong with {item.Sender}'s {AppLog.Excerpt(item.SpokenText)}", ex);
                 // One part going wrong must not end this thread, or nothing would be spoken again.
                 if (item.Status is not (QueueItemStatus.Done or QueueItemStatus.Skipped or QueueItemStatus.Failed))
                 {
@@ -459,6 +534,9 @@ public class SpeechEngine : ObservableObject, IDisposable
 
         if (!ok)
         {
+            // The engine has logged why; this says which part it cost.
+            _log?.Write("speech", $"Couldn't make audio for {item.Sender}'s {AppLog.Excerpt(item.SpokenText)} " +
+                                  $"(part {item.PartIndex}/{item.PartCount}, {item.SynthesisInfo?.ReplaceLineEndings(", ") ?? "no voice"})");
             item.Status = QueueItemStatus.Failed;
             MoveToHistory(item);
             return;
@@ -634,6 +712,14 @@ public class SpeechEngine : ObservableObject, IDisposable
     private void MoveToHistory(QueueItem item) => RunOnUi(() =>
     {
         Queue.Remove(item);
+        // Speed changes in a row keep only the latest, so History never lists two after
+        // each other: "Speed 160" followed by "Speed 170" is just "Speed 170".
+        if (item.IsSpeedAnnouncement && History.Count > 0 && History[0].IsSpeedAnnouncement)
+        {
+            var replaced = History[0];
+            History.RemoveAt(0);
+            DeleteAudioIfUnused(replaced.AudioFilePath);
+        }
         History.Insert(0, item);
         TrimHistory();
         SaveHistory();

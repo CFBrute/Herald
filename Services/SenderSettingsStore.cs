@@ -84,11 +84,14 @@ public class SenderSettingsStore
             var engineId = dto.EngineId ?? "kokoro";
             var voiceId = dto.EngineId == null ? "am_michael" : dto.VoiceId;
 
-            yield return new SenderSettings(dto.Sender, dto.Muted, dto.FilterCharacters, replacements, engineId, voiceId)
+            var settings = new SenderSettings(dto.Sender, dto.Muted, dto.FilterCharacters, replacements, engineId, voiceId)
             {
                 AnnounceSender = dto.AnnounceSender,
                 LanguageRules = dto.LanguageRules?.Select(r => new LanguageVoiceRule(r.LanguageName, r.EngineId, r.VoiceId)).ToList() ?? []
             };
+            // Saved before the option existed: keep the default (on for claude only).
+            if (dto.ShowAsMarkdown is { } markdown) settings.ShowAsMarkdown = markdown;
+            yield return settings;
         }
     }
 
@@ -101,13 +104,15 @@ public class SenderSettingsStore
             s.Sender, s.Muted, s.FilterCharacters, s.AnnounceSender,
             [.. s.ReplacementSnapshot.Select(r => new ReplacementDto(r.Find, r.Replace))],
             s.EngineId, s.VoiceId,
-            [.. s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId))])).ToList());
+            [.. s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId))],
+            s.ShowAsMarkdown)).ToList());
     }
 
     private record SenderSettingsDto(string Sender, bool Muted, string FilterCharacters, bool AnnounceSender = false,
                                      List<ReplacementDto>? Replacements = null,
                                      string? EngineId = null, string? VoiceId = null,
-                                     List<LanguageRuleDto>? LanguageRules = null);
+                                     List<LanguageRuleDto>? LanguageRules = null,
+                                     bool? ShowAsMarkdown = null);
 
     private record LanguageRuleDto(string LanguageName, string EngineId, string VoiceId);
 

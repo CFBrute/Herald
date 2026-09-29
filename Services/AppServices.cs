@@ -4,6 +4,7 @@ namespace Herald.Services;
 
 /// <summary>Everything Herald runs on, created once at startup and handed to the windows.</summary>
 public record AppServices(
+    AppLog Log,
     AppPaths Paths,
     AppSettings Settings,
     EngineRegistry Engines,

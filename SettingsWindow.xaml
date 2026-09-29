@@ -59,7 +59,7 @@
                         <Slider Grid.Row="4" Grid.Column="1" Minimum="50" Maximum="300" TickFrequency="10" IsSnapToTickEnabled="True"
                                 Value="{Binding SpeedPercent}" VerticalAlignment="Center"/>
                         <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding SpeedPercent, StringFormat={}{0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                        <TextBlock Grid.Row="4" Grid.Column="3" Text="Also via the Alt+Shift+0-9 hotkeys"
+                        <TextBlock Grid.Row="4" Grid.Column="3" Text="Also via the Faster/Slower hotkeys (Alt+Shift+Plus/Minus)"
                                    VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
                     </Grid>
 
@@ -124,16 +124,23 @@
                                                     ElementStyle="{StaticResource CenteredCheckBox}" EditingElementStyle="{StaticResource CenteredCheckBox}"/>
                             <DataGridCheckBoxColumn Header="Speak sender" Binding="{Binding AnnounceSender}" Width="110"
                                                     ElementStyle="{StaticResource CenteredCheckBox}" EditingElementStyle="{StaticResource CenteredCheckBox}"/>
+                            <DataGridCheckBoxColumn Header="Markdown" Binding="{Binding ShowAsMarkdown}" Width="90"
+                                                    ElementStyle="{StaticResource CenteredCheckBox}" EditingElementStyle="{StaticResource CenteredCheckBox}"/>
                             <DataGridTextColumn Header="Characters to strip" Binding="{Binding FilterCharacters}" Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
-                        <TextBlock Text="Add sender tag:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                        <TextBox x:Name="NewSenderBox" Width="160" VerticalContentAlignment="Center"
-                                 KeyDown="NewSenderBox_KeyDown"/>
-                        <Button Content="Add" MinWidth="60" Margin="6,0,0,0" Click="AddSenderButton_Click"/>
-                    </StackPanel>
+                    <DockPanel Grid.Row="2" Margin="0,10,0,0">
+                        <Button DockPanel.Dock="Right" x:Name="ResetSenderButton" Content="Reset text rules..." Padding="8,0,8,0" IsEnabled="False"
+                                Click="ResetSenderButton_Click"
+                                ToolTip="Puts the selected sender's characters to strip, replacements and Markdown setting back to Herald's defaults. Its voice, language rules, Muted and Speak sender are kept."/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Add sender tag:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBox x:Name="NewSenderBox" Width="160" VerticalContentAlignment="Center"
+                                     KeyDown="NewSenderBox_KeyDown"/>
+                            <Button Content="Add" MinWidth="60" Margin="6,0,0,0" Click="AddSenderButton_Click"/>
+                        </StackPanel>
+                    </DockPanel>
 
                     <StackPanel Grid.Row="3" Margin="0,14,0,0">
                         <TextBlock FontWeight="Bold" Text="Default voice for the selected sender" Margin="0,0,0,6"/>
@@ -349,6 +356,24 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Action" Binding="{Binding Label}" IsReadOnly="True" Width="*"/>
                             <DataGridTextColumn Header="Current keys" Binding="{Binding Display}" IsReadOnly="True" Width="140"/>
+                            <DataGridTemplateColumn Header="Status" Width="190">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{DynamicResource WarningText}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Problem}" Value="{x:Null}">
+                                                            <Setter Property="Foreground" Value="{DynamicResource SuccessText}"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTemplateColumn Header="" Width="80">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>

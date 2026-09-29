@@ -33,9 +33,11 @@ public partial class MainWindow : Window
         _engine = services.Speech;
         DataContext = _engine;
         StatusText.Text = $"Listening on 127.0.0.1:{HookServer.Port}";
+        VersionText.Text = BuildInfo.Label;
+        VersionText.ToolTip = BuildInfo.Details;
         ContentRendered += (_, _) => OfferClaudeConnection();
 
-        _hotkeyManager = new HotkeyManager(this, _engine, services.Hotkeys);
+        _hotkeyManager = new HotkeyManager(this, _engine, services.Hotkeys, services.Log);
         var clipboardWatcher = new ClipboardWatcher(this, _engine, services.Settings);
 
         services.HookServer.ShowRequested += () => Dispatcher.BeginInvoke(BringToFront);
@@ -182,6 +184,16 @@ public partial class MainWindow : Window
 
     private void ItemList_KeyDown(object sender, KeyEventArgs e)
     {
+        // Delete removes the selected History items straight away: nothing in History is
+        // important enough to ask first.
+        if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None && sender == HistoryList)
+        {
+            if (HistoryList.SelectedItems.Cast<QueueItem>().Any(i => i.IsSelectingText)) return;
+            DeleteFromHistory(HistoryList.SelectedItems.Cast<QueueItem>().ToList());
+            e.Handled = true;
+            return;
+        }
+
         // In text-selection mode the text box handles Ctrl+C itself (copying just the
         // selection) and marks the key handled, so this only runs for a selected item.
         if (e.Key != Key.C || Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -196,6 +208,27 @@ public partial class MainWindow : Window
     private void PlayAgain_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf(sender) is { } item) _engine.Requeue(item);
+    }
+
+    private void DeleteFromHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf(sender) is not { } item) return;
+        // The right-clicked item, or every selected item if it's one of them.
+        var selected = HistoryList.SelectedItems.Cast<QueueItem>().ToList();
+        DeleteFromHistory(selected.Contains(item) ? selected : [item]);
+    }
+
+    /// <summary>Deletes the items and selects the one that took the first one's place, so Delete can be pressed again.</summary>
+    private void DeleteFromHistory(List<QueueItem> items)
+    {
+        if (items.Count == 0) return;
+        var index = items.Min(i => _engine.History.IndexOf(i));
+
+        _engine.DeleteFromHistory(items);
+
+        if (_engine.History.Count == 0) return;
+        HistoryList.SelectedIndex = Math.Min(index, _engine.History.Count - 1);
+        (HistoryList.ItemContainerGenerator.ContainerFromIndex(HistoryList.SelectedIndex) as ListBoxItem)?.Focus();
     }
 
     private void CopyText_Click(object sender, RoutedEventArgs e)

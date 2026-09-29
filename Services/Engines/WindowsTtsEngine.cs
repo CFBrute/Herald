@@ -16,6 +16,8 @@ namespace Herald.Services.Engines;
 /// </summary>
 public class WindowsTtsEngine : ObservableObject, ITtsEngine
 {
+    private readonly AppLog? _log;
+
     public string Id => "windows";
     public string DisplayName => "Windows voices";
     public string Description =>
@@ -27,8 +29,9 @@ public class WindowsTtsEngine : ObservableObject, ITtsEngine
     public IReadOnlyList<VoiceInfo> Voices { get; private set; } = [];
     public string DefaultVoiceId { get; private set; } = string.Empty;
 
-    public WindowsTtsEngine()
+    public WindowsTtsEngine(AppLog? log = null)
     {
+        _log = log;
         Refresh();
     }
 
@@ -70,8 +73,13 @@ public class WindowsTtsEngine : ObservableObject, ITtsEngine
             await input.CopyToAsync(file, ct);
             return true;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _log?.Write("windows", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}", ex);
             return false;
         }
     }

@@ -36,6 +36,16 @@ public class SenderSettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void Only_claude_is_shown_as_markdown_by_default()
+    {
+        var store = new SenderSettingsStore(FilePath);
+
+        Assert.True(store.GetOrCreate("claude").ShowAsMarkdown);
+        Assert.False(store.GetOrCreate("herald").ShowAsMarkdown);
+        Assert.False(store.GetOrCreate("clipboard").ShowAsMarkdown);
+    }
+
+    [Fact]
     public void Lookup_ignores_case_and_creates_each_sender_once()
     {
         var store = new SenderSettingsStore(FilePath);
@@ -97,6 +107,7 @@ public class SenderSettingsStoreTests : IDisposable
         claude.EngineId = "piper";
         claude.VoiceId = "sv_SE-nst-medium";
         claude.AnnounceSender = true;
+        claude.ShowAsMarkdown = false;
         claude.FilterCharacters = "*";
         claude.Replacements.Add(new ReplacementRule("TTS", "text to speech"));
         claude.LanguageRules = [new LanguageVoiceRule("Swedish", "piper", "sv_SE-nst-medium")];
@@ -106,12 +117,41 @@ public class SenderSettingsStoreTests : IDisposable
 
         Assert.True(reloaded.Muted);
         Assert.True(reloaded.AnnounceSender);
+        Assert.False(reloaded.ShowAsMarkdown);
         Assert.Equal("piper", reloaded.EngineId);
         Assert.Equal("sv_SE-nst-medium", reloaded.VoiceId);
         Assert.Equal("*", reloaded.FilterCharacters);
         Assert.Contains(reloaded.Replacements, r => r is { Find: "TTS", Replace: "text to speech" });
         Assert.Equal([new LanguageVoiceRule("Swedish", "piper", "sv_SE-nst-medium")], reloaded.LanguageRules);
         Assert.Contains(new SenderSettingsStore(FilePath).Senders, s => s.Sender == "new-one");
+    }
+
+    [Fact]
+    public void Resetting_text_rules_restores_the_defaults_keeps_the_rest_and_is_saved()
+    {
+        var store = new SenderSettingsStore(FilePath);
+        var claude = store.GetOrCreate("claude");
+        claude.FilterCharacters = "-";
+        claude.ShowAsMarkdown = false;
+        claude.Replacements.Add(new ReplacementRule("TTS", "text to speech"));
+        claude.Muted = true;
+        claude.AnnounceSender = true;
+        claude.EngineId = "piper";
+        claude.VoiceId = "sv_SE-nst-medium";
+        claude.LanguageRules = [new LanguageVoiceRule("Swedish", "piper", "sv_SE-nst-medium")];
+
+        claude.ResetTextRules();
+
+        var reloaded = new SenderSettingsStore(FilePath).GetOrCreate("claude");
+        Assert.Equal(SenderSettings.DefaultFilterCharacters, reloaded.FilterCharacters);
+        Assert.True(reloaded.ShowAsMarkdown);
+        Assert.Equal(SenderSettings.DefaultReplacements().Select(r => (r.Find, r.Replace)),
+                     reloaded.Replacements.Select(r => (r.Find, r.Replace)));
+        Assert.True(reloaded.Muted);
+        Assert.True(reloaded.AnnounceSender);
+        Assert.Equal("piper", reloaded.EngineId);
+        Assert.Equal("sv_SE-nst-medium", reloaded.VoiceId);
+        Assert.Single(reloaded.LanguageRules);
     }
 
     [Fact]
@@ -133,6 +173,7 @@ public class SenderSettingsStoreTests : IDisposable
         Assert.Equal("kokoro", claude.EngineId);
         Assert.Equal("am_michael", claude.VoiceId);
         Assert.Equal("-", claude.FilterCharacters);
+        Assert.True(claude.ShowAsMarkdown);
     }
 
     [Fact]
@@ -198,11 +239,25 @@ public class HotkeySettingsStoreTests : IDisposable
     {
         var bindings = new HotkeySettingsStore(FilePath).Bindings;
 
-        Assert.Equal(14, bindings.Count);
+        Assert.Equal(6, bindings.Count);
         var toggle = bindings.Single(b => b.Action == HotkeyAction.Toggle);
         Assert.Equal("Alt+Shift+S", toggle.Display);
-        Assert.Equal(Enumerable.Range(0, 10).Select(i => (int?)(100 + i * 10)),
-                     bindings.Where(b => b.Action == HotkeyAction.SetSpeed).Select(b => b.SpeedValue));
+        Assert.Equal("Alt+Shift+Plus", bindings.Single(b => b.Action == HotkeyAction.SpeedUp).Display);
+        Assert.Equal("Alt+Shift+Minus", bindings.Single(b => b.Action == HotkeyAction.SpeedDown).Display);
+    }
+
+    [Fact]
+    public void A_hotkey_shows_whether_it_works()
+    {
+        var binding = new HotkeySettingsStore(FilePath).Bindings[0];
+        var changed = new List<string?>();
+        binding.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        Assert.Equal("Works", binding.Status);
+        binding.Problem = "In use by another program";
+
+        Assert.Equal("In use by another program", binding.Status);
+        Assert.Contains(nameof(HotkeyBinding.Status), changed);
     }
 
     [Fact]
@@ -231,7 +286,7 @@ public class HotkeySettingsStoreTests : IDisposable
 
         var bindings = new HotkeySettingsStore(FilePath).Bindings;
 
-        Assert.Equal(14, bindings.Count);
+        Assert.Equal(6, bindings.Count);
         Assert.Equal("F9", bindings.Single(b => b.Id == 1).Display);
         Assert.DoesNotContain(bindings, b => b.Id == 999);
     }

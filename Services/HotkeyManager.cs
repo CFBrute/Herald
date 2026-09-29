@@ -30,10 +30,12 @@ public class HotkeyManager : IDisposable
     private readonly HwndSource _source;
     private readonly IntPtr _hwnd;
     private readonly Dictionary<int, HotkeyBinding> _active = new();
+    private readonly AppLog? _log;
 
-    public HotkeyManager(Window window, SpeechEngine engine, HotkeySettingsStore store)
+    public HotkeyManager(Window window, SpeechEngine engine, HotkeySettingsStore store, AppLog? log = null)
     {
         _engine = engine;
+        _log = log;
 
         _hwnd = new WindowInteropHelper(window).EnsureHandle();
         _source = HwndSource.FromHwnd(_hwnd)!;
@@ -67,21 +69,59 @@ public class HotkeyManager : IDisposable
         return false;
     }
 
+    // A hotkey on + or - also answers to the numpad's + or -, registered under this id offset.
+    private const int NumpadTwinOffset = 1000;
+
+    private static Key? NumpadTwin(Key key) => key switch
+    {
+        Key.OemPlus => Key.Add,
+        Key.OemMinus => Key.Subtract,
+        _ => null
+    };
+
     private bool TryRegister(HotkeyBinding binding)
     {
         var vk = (uint)KeyInterop.VirtualKeyFromKey(binding.Key);
         var ok = RegisterHotKey(_hwnd, binding.Id, (uint)binding.Modifiers, vk);
-        if (ok)
+        if (!ok)
         {
-            _active[binding.Id] = binding;
+            var reason = RegistrationError();
+            binding.Problem = reason;
+            _log?.Write("hotkeys", $"{binding.Display} ({binding.Label}) doesn't work: {reason}");
+            return false;
         }
-        return ok;
+        _active[binding.Id] = binding;
+        binding.Problem = null;
+
+        // Best effort: the main key works even if the numpad key is taken.
+        if (NumpadTwin(binding.Key) is { } twin)
+        {
+            if (RegisterHotKey(_hwnd, binding.Id + NumpadTwinOffset, (uint)binding.Modifiers, (uint)KeyInterop.VirtualKeyFromKey(twin)))
+            {
+                _active[binding.Id + NumpadTwinOffset] = binding;
+            }
+            else
+            {
+                var reason = RegistrationError();
+                binding.Problem = $"Works; numpad key: {reason.ToLowerInvariant()}";
+                _log?.Write("hotkeys", $"The numpad key for {binding.Display} ({binding.Label}) doesn't work: {reason}");
+            }
+        }
+        return true;
     }
+
+    // 1409 (ERROR_HOTKEY_ALREADY_REGISTERED) is by far the most common reason.
+    private static string RegistrationError() => Marshal.GetLastPInvokeError() switch
+    {
+        1409 => "In use by another program",
+        var code => $"Windows error {code}"
+    };
 
     private void Unregister(HotkeyBinding binding)
     {
         UnregisterHotKey(_hwnd, binding.Id);
         _active.Remove(binding.Id);
+        if (_active.Remove(binding.Id + NumpadTwinOffset)) UnregisterHotKey(_hwnd, binding.Id + NumpadTwinOffset);
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -114,8 +154,12 @@ public class HotkeyManager : IDisposable
                 SpeakClipboard();
                 break;
 
-            case HotkeyAction.SetSpeed:
-                _engine.SetSpeed(binding.SpeedValue ?? 100);
+            case HotkeyAction.SpeedUp:
+                _engine.ChangeSpeed(SpeechEngine.SpeedStep);
+                break;
+
+            case HotkeyAction.SpeedDown:
+                _engine.ChangeSpeed(-SpeechEngine.SpeedStep);
                 break;
         }
     }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -30,6 +31,17 @@ public class SenderSettings : ObservableObject
     {
         get => _announceSender;
         set => SetField(ref _announceSender, value);
+    }
+
+    private bool _showAsMarkdown;
+    /// <summary>
+    /// When true, this sender's messages are shown formatted as Markdown in the lists.
+    /// On by default only for "claude", whose replies are written in Markdown.
+    /// </summary>
+    public bool ShowAsMarkdown
+    {
+        get => _showAsMarkdown;
+        set => SetField(ref _showAsMarkdown, value);
     }
 
     private string _engineId;
@@ -80,6 +92,23 @@ public class SenderSettings : ObservableObject
     private volatile ReplacementRule[] _replacementSnapshot = [];
     public IReadOnlyList<ReplacementRule> ReplacementSnapshot => _replacementSnapshot;
 
+    /// <summary>Claude's replies are written in Markdown; other senders' text is shown as it is.</summary>
+    public static bool DefaultShowAsMarkdown(string sender) => sender.Equals("claude", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Puts the text rules - characters to strip, replacements and Markdown display - back to
+    /// Herald's defaults, e.g. to pick up a default that changed after this sender was made.
+    /// The voice, language rules, mute and "speak sender" switches are kept.
+    /// </summary>
+    public void ResetTextRules()
+    {
+        FilterCharacters = DefaultFilterCharacters;
+        ShowAsMarkdown = DefaultShowAsMarkdown(Sender);
+        // One by one, so each removed rule is unhooked (Clear() doesn't say which were removed).
+        while (Replacements.Count > 0) Replacements.RemoveAt(Replacements.Count - 1);
+        foreach (var rule in DefaultReplacements()) Replacements.Add(rule);
+    }
+
     public static ReplacementRule[] DefaultReplacements() =>
     [
         new ReplacementRule(((char)0x2014).ToString(), ", ")
@@ -91,6 +120,7 @@ public class SenderSettings : ObservableObject
     {
         Sender = sender;
         _muted = muted;
+        _showAsMarkdown = DefaultShowAsMarkdown(sender);
         _filterCharacters = filterCharacters ?? DefaultFilterCharacters;
         _engineId = engineId ?? DefaultEngineId;
         _voiceId = voiceId ?? string.Empty;

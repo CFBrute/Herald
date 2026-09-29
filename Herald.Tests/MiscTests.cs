@@ -67,3 +67,80 @@ public class AppPathsTests
         Assert.True(Directory.Exists(paths.HistoryDir));
     }
 }
+
+public class BuildInfoTests
+{
+    [Theory]
+    [InlineData("0.91.11+29f2105", "0.91.11", "29f2105")]
+    [InlineData("0.91.11+29f2105*", "0.91.11", "29f2105*")]
+    [InlineData("0.91.0", "0.91.0", "")]
+    [InlineData(null, "0.0.0", "")]
+    public void The_stamped_version_is_split_into_version_and_commit(string? stamped, string version, string commit) =>
+        Assert.Equal((version, commit), BuildInfo.Split(stamped));
+
+    [Theory]
+    [InlineData("0.91.11", "29f2105", "v0.91.11 · 29f2105")]
+    [InlineData("0.91.0", "", "v0.91.0")]
+    public void The_label_shows_the_version_and_commit(string version, string commit, string expected) =>
+        Assert.Equal(expected, BuildInfo.Describe(version, commit));
+
+    [Fact]
+    public void The_tooltip_tells_when_it_was_built_and_what_the_star_means()
+    {
+        Assert.Equal("Built 2026-09-29 17:50\nFrom commit 29f2105", BuildInfo.Explain("29f2105", "2026-09-29 17:50"));
+        Assert.Equal("Built 2026-09-29 17:50\nFrom commit 29f2105\n* with changes that weren't committed yet",
+                     BuildInfo.Explain("29f2105*", "2026-09-29 17:50"));
+        Assert.Equal("Build time unknown", BuildInfo.Explain("", ""));
+    }
+
+    [Fact]
+    public void Herald_is_stamped_with_this_version()
+    {
+        Assert.StartsWith("0.91.", BuildInfo.Version);
+        Assert.Matches(@"^[0-9a-f]{7}\*?$", BuildInfo.Commit);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$", BuildInfo.BuildTime);
+    }
+}
+
+public class AppLogTests : IDisposable
+{
+    private readonly TempFolder _dir = new();
+    private string LogPath => _dir.File("herald.log");
+    private string OldLogPath => _dir.File("herald.old.log");
+
+    public void Dispose() => _dir.Dispose();
+
+    [Fact]
+    public void Writes_one_line_per_event_with_the_error_indented_below()
+    {
+        var log = new AppLog(LogPath, OldLogPath);
+
+        log.Write("hook", "Something happened");
+        log.Write("speech", "It broke", new InvalidOperationException("boom"));
+
+        var lines = File.ReadAllLines(LogPath);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \| hook \| Something happened$", lines[0]);
+        Assert.EndsWith("| speech | It broke", lines[1]);
+        Assert.Equal("    System.InvalidOperationException: boom", lines[2]);
+    }
+
+    [Fact]
+    public void A_full_log_starts_over_and_keeps_the_previous_one()
+    {
+        File.WriteAllText(LogPath, new string('x', 600 * 1024));
+        var log = new AppLog(LogPath, OldLogPath);
+
+        log.Write("herald", "Fresh start");
+
+        Assert.Single(File.ReadAllLines(LogPath));
+        Assert.Equal(600 * 1024, new FileInfo(OldLogPath).Length);
+    }
+
+    [Theory]
+    [InlineData(null, "\"\"")]
+    [InlineData("Short", "\"Short\"")]
+    [InlineData("Two\nlines", "\"Two lines\"")]
+    [InlineData("A rather long message", "\"A rather lon…\"")]
+    public void Excerpts_are_short_single_lines(string? text, string expected) =>
+        Assert.Equal(expected, AppLog.Excerpt(text, 12));
+}

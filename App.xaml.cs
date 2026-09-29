@@ -39,13 +39,16 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) => LogCrash(paths.CrashLog, args.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, args) => LogCrash(paths.CrashLog, args.ExceptionObject as Exception);
 
+        var log = new AppLog(paths.HeraldLog, paths.HeraldOldLog);
+        log.Write("herald", $"Started {BuildInfo.Label} (built {BuildInfo.BuildTime})");
+
         var settings = new AppSettings(paths.AppSettingsFile);
-        var engines = new EngineRegistry(paths.EnginesDir);
+        var engines = new EngineRegistry(paths.EnginesDir, log);
         var senders = new SenderSettingsStore(paths.SenderSettingsFile);
         var languages = new LanguageProfileStore(paths.LanguageProfilesFile);
-        var speech = new SpeechEngine(paths, settings, engines, senders, languages);
-        var hookServer = new HookServer(speech, settings);
-        _services = new AppServices(paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
+        var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log);
+        var hookServer = new HookServer(speech, settings, log: log);
+        _services = new AppServices(log, paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
                                     speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
 
         // Loading the Kokoro model takes a few seconds; start now so the first message doesn't wait.

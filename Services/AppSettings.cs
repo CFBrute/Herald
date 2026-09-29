@@ -13,11 +13,14 @@ public class AppSettings : ObservableObject
 {
     private readonly string _filePath;
 
+    public const int MinSpeedPercent = 50;
+    public const int MaxSpeedPercent = 300;
+
     private int _speedPercent = 150;
     public int SpeedPercent
     {
         get => _speedPercent;
-        set => Set(ref _speedPercent, Math.Clamp(value, 50, 300));
+        set => Set(ref _speedPercent, Math.Clamp(value, MinSpeedPercent, MaxSpeedPercent));
     }
 
     private int _chunkThreshold = 300;

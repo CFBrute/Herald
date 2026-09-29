@@ -196,7 +196,22 @@ public partial class SettingsWindow : Window
 
     private SenderSettings? SelectedSender => SendersGrid.SelectedItem as SenderSettings;
 
-    private void SendersGrid_SelectionChanged(object sender, SelectionChangedEventArgs e) => LoadVoicePickers();
+    private void SendersGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        ResetSenderButton.IsEnabled = SelectedSender != null;
+        LoadVoicePickers();
+    }
+
+    private void ResetSenderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedSender is not { } selected) return;
+
+        var answer = MessageBox.Show(this,
+            $"Put {selected.Sender}'s characters to strip, replacements and Markdown setting back to Herald's defaults?\n\n" +
+            "Its voice, language rules, Muted and Speak sender stay as they are.",
+            "Reset text rules", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.Yes) selected.ResetTextRules();
+    }
 
     private void LoadVoicePickers()
     {
@@ -445,6 +460,7 @@ public partial class SettingsWindow : Window
             new("Language profiles", paths.LanguageProfilesFile, false),
             new("Hotkeys", paths.HotkeysFile, false),
             new("History list", paths.HistoryFile, false),
+            new("Herald log (errors and warnings)", paths.HeraldLog, false),
             new("Crash log", paths.CrashLog, false),
             new("Playback log", paths.PlaybackLog, false),
             new("Herald data folder", paths.DataDir, true),

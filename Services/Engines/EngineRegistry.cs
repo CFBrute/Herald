@@ -11,11 +11,12 @@ public class EngineRegistry : IDisposable
     public PiperEngine Piper { get; }
     public IReadOnlyList<ITtsEngine> All { get; }
 
-    public EngineRegistry(string enginesDir)
+    /// <param name="log">Where the engines note what went wrong; none in tests.</param>
+    public EngineRegistry(string enginesDir, AppLog? log = null)
     {
-        Windows = new WindowsTtsEngine();
-        Kokoro = new KokoroEngine(enginesDir);
-        Piper = new PiperEngine(enginesDir);
+        Windows = new WindowsTtsEngine(log);
+        Kokoro = new KokoroEngine(enginesDir, log);
+        Piper = new PiperEngine(enginesDir, log);
         All = [Windows, Kokoro, Piper];
     }
 

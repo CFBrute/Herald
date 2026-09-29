@@ -12,7 +12,46 @@
     <ApplicationIcon>Assets\Herald.ico</ApplicationIcon>
     <!-- The test project lives in a subfolder; keep its files out of Herald itself. -->
     <DefaultItemExcludes>$(DefaultItemExcludes);Herald.Tests\**</DefaultItemExcludes>
+    <!-- Bumped by hand for a new version; the third number is the git commit count,
+         filled in by StampBuildVersion below. -->
+    <VersionPrefix>0.91</VersionPrefix>
+    <!-- The version text is built below, with the short commit instead of the full one. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <!-- Stamps the version (0.91.<commit count>), the commit it was built from (with "*" when
+       there were uncommitted changes) and the build time into Herald.exe, shown in the
+       main window. Without git the version is 0.91.0 and there is no commit. -->
+  <Target Name="StampBuildVersion" BeforeTargets="GetAssemblyVersion">
+    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="HeraldCommitCount" />
+      <Output TaskParameter="ExitCode" PropertyName="HeraldGitExitCode" />
+    </Exec>
+    <Exec Command="git rev-parse --short=7 HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'"
+          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="HeraldCommit" />
+    </Exec>
+    <Exec Command="git status --porcelain" ConsoleToMSBuild="true" IgnoreExitCode="true" Condition="'$(HeraldGitExitCode)' == '0'"
+          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="HeraldGitChanges" />
+    </Exec>
+    <PropertyGroup>
+      <HeraldCommitCount Condition="'$(HeraldGitExitCode)' != '0'">0</HeraldCommitCount>
+      <HeraldCommit Condition="'$(HeraldGitExitCode)' != '0'"></HeraldCommit>
+      <HeraldCommit Condition="'$(HeraldCommit)' != '' and '$(HeraldGitChanges)' != ''">$(HeraldCommit)*</HeraldCommit>
+      <Version>$(VersionPrefix).$(HeraldCommitCount)</Version>
+      <FileVersion>$(Version).0</FileVersion>
+      <InformationalVersion>$(Version)</InformationalVersion>
+      <InformationalVersion Condition="'$(HeraldCommit)' != ''">$(Version)+$(HeraldCommit)</InformationalVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>BuildTime</_Parameter1>
+        <_Parameter2>$([System.DateTime]::Now.ToString("yyyy-MM-dd HH:mm"))</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <Resource Include="Assets\Herald.png" />
@@ -25,6 +64,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.4.0" />
     <PackageReference Include="NAudio" Version="3.1.0" />
   </ItemGroup>
 

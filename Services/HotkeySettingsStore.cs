@@ -9,7 +9,7 @@ namespace Herald.Services;
 
 /// <summary>
 /// Persists the configurable global hotkeys (default: Alt+Shift+S toggle, Alt+Shift+Q
-/// skip part, Alt+Shift+W skip message, Alt+Shift+0-9 speed) so rebinds survive a restart.
+/// skip part, Alt+Shift+W skip message, Alt+Shift+Plus/Minus speed) so rebinds survive a restart.
 /// </summary>
 public class HotkeySettingsStore
 {
@@ -44,13 +44,10 @@ public class HotkeySettingsStore
         yield return new HotkeyBinding(2, "Skip current part", HotkeyAction.Stop, mods, Key.Q);
         yield return new HotkeyBinding(3, "Skip whole message", HotkeyAction.SkipMessage, mods, Key.W);
         yield return new HotkeyBinding(4, "Speak selected text (copies it first)", HotkeyAction.SpeakClipboard, mods, Key.C);
-
-        var speedKeys = new[] { Key.D0, Key.D1, Key.D2, Key.D3, Key.D4, Key.D5, Key.D6, Key.D7, Key.D8, Key.D9 };
-        for (var i = 0; i < speedKeys.Length; i++)
-        {
-            var speed = 100 + i * 10;
-            yield return new HotkeyBinding(10 + i, $"Speed {speed}%", HotkeyAction.SetSpeed, mods, speedKeys[i], speed);
-        }
+        // Ids 10-19 were the old fixed speeds (Alt+Shift+0-9); saved keys for them are ignored.
+        // On + and -, the numpad + and - work too (see HotkeyManager).
+        yield return new HotkeyBinding(5, "Faster (10% up)", HotkeyAction.SpeedUp, mods, Key.OemPlus);
+        yield return new HotkeyBinding(6, "Slower (10% down)", HotkeyAction.SpeedDown, mods, Key.OemMinus);
     }
 
     private void ApplySavedKeys()
@@ -67,7 +64,7 @@ public class HotkeySettingsStore
 
     private void Save() =>
         SafeFile.WriteJson(_filePath,
-                           Bindings.Select(b => new HotkeyDto(b.Id, b.Label, b.Action.ToString(), b.SpeedValue, (int)b.Modifiers, (int)b.Key)).ToList());
+                           Bindings.Select(b => new HotkeyDto(b.Id, b.Label, b.Action.ToString(), (int)b.Modifiers, (int)b.Key)).ToList());
 
-    private record HotkeyDto(int Id, string Label, string Action, int? SpeedValue, int Modifiers, int Key);
+    private record HotkeyDto(int Id, string Label, string Action, int Modifiers, int Key);
 }

@@ -23,6 +23,9 @@ public class QueueItem : ObservableObject
     /// <summary>What the voice gets: the text after the sender's filters and replacements.</summary>
     public string SpokenText { get; }
 
+    /// <summary>The text is shown formatted as Markdown (the sender's setting when it arrived).</summary>
+    public bool ShowAsMarkdown { get; init; }
+
     public string Sender { get; }
     public DateTime EnqueuedAt { get; init; } = DateTime.Now;
     public string? AudioFilePath { get; set; }
@@ -38,6 +41,9 @@ public class QueueItem : ObservableObject
     /// synthesized again. The file belongs to the original item.
     /// </summary>
     public string? PreparedAudioPath { get; init; }
+
+    /// <summary>"Speed 160": replaced by the next speed announcement if it hasn't played yet.</summary>
+    public bool IsSpeedAnnouncement { get; init; }
 
     /// <summary>True for a copy put back in the queue with "Play again".</summary>
     public bool IsCopy { get; init; }
@@ -68,7 +74,12 @@ public class QueueItem : ObservableObject
     /// 0 or 1, alternating per message, so the lists can shade whole messages (all their
     /// parts together) in alternating backgrounds.
     /// </summary>
-    public int Band { get; set; }
+    public int Band
+    {
+        get => _band;
+        set => SetField(ref _band, value);
+    }
+    private int _band;
 
     private bool _isSelectingText;
     /// <summary>UI state: the item's text is shown as a selectable text box.</summary>

@@ -10,6 +10,8 @@
     <SolidColorBrush x:Key="SubtleText" Color="#6B6B6B"/>
     <SolidColorBrush x:Key="StatusText" Color="#1E3A8A"/>
     <SolidColorBrush x:Key="SelectionBoxBackground" Color="#FFFFE0"/>
+    <SolidColorBrush x:Key="CodeBackground" Color="#E1E4E8"/>
+    <SolidColorBrush x:Key="LinkText" Color="#1A5FB4"/>
     <SolidColorBrush x:Key="WarningText" Color="#C05A00"/>
     <SolidColorBrush x:Key="ErrorText" Color="#C62828"/>
     <SolidColorBrush x:Key="SuccessText" Color="#1B7F3A"/>

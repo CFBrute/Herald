@@ -28,9 +28,11 @@ public class AppPaths
     public string CrashLog => Path.Combine(DataDir, "crash.log");
     public string PlaybackLog => Path.Combine(DataDir, "playback.log");
     public string PlaybackOldLog => Path.Combine(DataDir, "playback.old.log");
+    public string HeraldLog => Path.Combine(DataDir, "herald.log");
+    public string HeraldOldLog => Path.Combine(DataDir, "herald.old.log");
 
     public string[] SettingsFiles => [AppSettingsFile, SenderSettingsFile, HotkeysFile, LanguageProfilesFile];
-    public string[] LogFiles => [PlaybackLog, PlaybackOldLog, CrashLog];
+    public string[] LogFiles => [HeraldLog, HeraldOldLog, PlaybackLog, PlaybackOldLog, CrashLog];
 
     public AppPaths(string dataDir)
     {

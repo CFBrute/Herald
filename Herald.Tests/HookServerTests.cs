@@ -15,7 +15,7 @@ public class HookServerTests : IDisposable
 
     public HookServerTests()
     {
-        _server = new HookServer(_h.Speech, _h.Settings, port: 0);
+        _server = new HookServer(_h.Speech, _h.Settings, port: 0, log: new AppLog(_h.Paths.HeraldLog, _h.Paths.HeraldOldLog));
         _server.Start();
     }
 
@@ -122,11 +122,21 @@ public class HookServerTests : IDisposable
     }
 
     [Fact]
-    public async Task Garbage_closes_the_connection_and_the_server_keeps_going()
+    public async Task Garbage_gets_an_error_is_logged_and_the_server_keeps_going()
     {
-        Assert.Null(await Send("this is not json"));
+        Assert.Equal("""{"status":"error"}""", await Send("this is not json"));
 
+        Assert.Contains("| hook | Couldn't read a message", File.ReadAllText(_h.Paths.HeraldLog));
+        Assert.Contains("\"this is not json\"", File.ReadAllText(_h.Paths.HeraldLog));
         Assert.Equal("ok", (string?)(await Command("""{ "type": "skip" }"""))["status"]);
+    }
+
+    [Fact]
+    public async Task An_unknown_command_is_logged()
+    {
+        await Command("""{ "type": "dance", "sender": "tester" }""");
+
+        Assert.Contains("Unknown command \"dance\" from tester", File.ReadAllText(_h.Paths.HeraldLog));
     }
 
     [Fact]

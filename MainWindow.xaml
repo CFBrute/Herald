@@ -1,6 +1,7 @@
 <Window x:Class="Herald.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Herald"
         Title="Herald" Height="600" Width="780"
         Foreground="{DynamicResource PrimaryText}">
     <Window.Resources>
@@ -89,6 +90,24 @@
                 <DataTrigger Binding="{Binding IsSelectingText}" Value="True">
                     <Setter Property="Visibility" Value="Collapsed"/>
                 </DataTrigger>
+                <DataTrigger Binding="{Binding ShowAsMarkdown}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- The same text formatted, for senders set to "Markdown" (Claude). -->
+        <Style x:Key="MarkdownItemText" TargetType="local:MarkdownView">
+            <Setter Property="Text" Value="{Binding Text}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding ShowAsMarkdown}" Value="True"/>
+                        <Condition Binding="{Binding IsSelectingText}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible"/>
+                </MultiDataTrigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="SelectableItemText" TargetType="TextBox">
@@ -175,6 +194,7 @@
                                 </StackPanel>
                                 <Grid>
                                     <TextBlock Style="{StaticResource ItemText}"/>
+                                    <local:MarkdownView Style="{StaticResource MarkdownItemText}"/>
                                     <TextBox Style="{StaticResource SelectableItemText}"
                                              LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
                                 </Grid>
@@ -194,7 +214,7 @@
                             ToolTip="Removes every item from History, including its saved audio"
                             Click="ClearHistoryButton_Click"/>
                 </Grid>
-                <ListBox x:Name="HistoryList" ItemsSource="{Binding History}"
+                <ListBox x:Name="HistoryList" ItemsSource="{Binding History}" SelectionMode="Extended"
                          ItemContainerStyle="{StaticResource BandedItem}" Background="{DynamicResource ListBackground}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          MouseDoubleClick="HistoryList_MouseDoubleClick"
@@ -212,6 +232,8 @@
                                         <MenuItem Header="Play again" FontWeight="Bold" Click="PlayAgain_Click"/>
                                         <MenuItem Header="Select text" Click="SelectText_Click"/>
                                         <MenuItem Header="Copy text" Click="CopyText_Click"/>
+                                        <Separator/>
+                                        <MenuItem Header="Delete" InputGestureText="Del" Click="DeleteFromHistory_Click"/>
                                     </ContextMenu>
                                 </StackPanel.ContextMenu>
                                 <StackPanel Orientation="Horizontal">
@@ -240,6 +262,7 @@
                                 </StackPanel>
                                 <Grid>
                                     <TextBlock Style="{StaticResource ItemText}"/>
+                                    <local:MarkdownView Style="{StaticResource MarkdownItemText}"/>
                                     <TextBox Style="{StaticResource SelectableItemText}"
                                              LostKeyboardFocus="SelectableText_LostKeyboardFocus"/>
                                 </Grid>
@@ -251,7 +274,9 @@
             </DockPanel>
         </Grid>
 
-        <TextBlock Grid.Row="2" x:Name="StatusText"
-                   Foreground="{DynamicResource SubtleText}" Margin="0,10,0,0"/>
+        <DockPanel Grid.Row="2" Margin="0,10,0,0">
+            <TextBlock DockPanel.Dock="Right" x:Name="VersionText" Foreground="{DynamicResource SubtleText}"/>
+            <TextBlock x:Name="StatusText" Foreground="{DynamicResource SubtleText}"/>
+        </DockPanel>
     </Grid>
 </Window>

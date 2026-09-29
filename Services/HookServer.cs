@@ -30,6 +30,7 @@ public class HookServer
 
     private readonly SpeechEngine _engine;
     private readonly AppSettings _settings;
+    private readonly AppLog? _log;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _cts = new();
 
@@ -37,8 +38,9 @@ public class HookServer
     public event Action? ShowRequested;
 
     /// <param name="port">Herald's fixed <see cref="Port"/> unless given; 0 picks any free port.</param>
-    public HookServer(SpeechEngine engine, AppSettings settings, int port = Port)
+    public HookServer(SpeechEngine engine, AppSettings settings, int port = Port, AppLog? log = null)
     {
+        _log = log;
         _engine = engine;
         _settings = settings;
         _listener = new TcpListener(IPAddress.Loopback, port);
@@ -84,16 +86,26 @@ public class HookServer
     private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
         using var _ = client;
+        string? line = null;
         try
         {
             using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8);
             using var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
 
-            var line = await reader.ReadLineAsync(ct);
+            line = await reader.ReadLineAsync(ct);
             if (line == null) return;
 
-            var command = JsonSerializer.Deserialize<Command>(line, JsonOptions);
+            Command? command;
+            try
+            {
+                command = JsonSerializer.Deserialize<Command>(line, JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                _log?.Write("hook", $"Couldn't read a message ({ex.Message}): {AppLog.Excerpt(line, 200)}");
+                command = null;
+            }
 
             if (command == null)
             {
@@ -131,6 +143,10 @@ public class HookServer
                 case "setspeed":
                     if (command.Value is { } speed) _engine.SetSpeed(speed);
                     break;
+
+                default:
+                    _log?.Write("hook", $"Unknown command \"{command.Type}\" from {sender}");
+                    break;
             }
 
             await writer.WriteLineAsync(JsonSerializer.Serialize(new
@@ -140,9 +156,13 @@ public class HookServer
                 speed = _settings.SpeedPercent
             }));
         }
-        catch
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
         {
-            // client disconnected or sent garbage - ignore
+            // The sender hung up before the reply, or Herald is closing - nothing lost.
+        }
+        catch (Exception ex)
+        {
+            _log?.Write("hook", $"Something went wrong handling {AppLog.Excerpt(line, 200)}", ex);
         }
     }
 }

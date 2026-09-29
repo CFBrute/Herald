@@ -22,7 +22,12 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
     private const int Port = 8767;
     private const string ModelFileName = "kokoro-v1.0.onnx";
     private const string VoicesFileName = "voices-v1.0.bin";
-    private const string ReleaseBaseUrl = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/";
+    // Pinned to the versions kokoro_server.py was tested with: kokoro-onnx changes behaviour
+    // between versions (speed limits, pauses). Their own dependencies stay unpinned, since
+    // fixed versions of those may have no download for a newer Python.
+    public const string KokoroOnnxPackage = "kokoro-onnx==0.6.1";
+    public const string SoundfilePackage = "soundfile==0.14.0";
+    private const string ReleaseBaseUrl ="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/";
 
     private readonly string _engineDir;
     private readonly string _venvDir;
@@ -55,8 +60,11 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
     public IReadOnlyList<VoiceInfo> Voices { get; } = BuildVoiceList();
     public string DefaultVoiceId => "am_michael";
 
-    public KokoroEngine(string enginesDir)
+    private readonly AppLog? _log;
+
+    public KokoroEngine(string enginesDir, AppLog? log = null)
     {
+        _log = log;
         _engineDir = Path.Combine(enginesDir, "kokoro");
         _venvDir = Path.Combine(_engineDir, "venv");
         _modelDir = Path.Combine(_engineDir, "models");
@@ -79,8 +87,9 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
             stream.CopyTo(file);
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _log?.Write("kokoro", $"Couldn't write the server script to {_serverScript}", ex);
             return false;
         }
     }
@@ -120,10 +129,16 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
             if (result == SynthResult.Failed) return false;
             if (result == SynthResult.TimedOut)
             {
+                _log?.Write("kokoro", $"No answer within 30 s for {AppLog.Excerpt(text)}; restarting the server");
                 RestartServer();
                 return false;
             }
-            if (DateTime.UtcNow > deadline || ct.IsCancellationRequested) return false;
+            if (ct.IsCancellationRequested) return false;
+            if (DateTime.UtcNow > deadline)
+            {
+                _log?.Write("kokoro", $"The server didn't start listening on port {Port} within 20 s; {AppLog.Excerpt(text)} not spoken");
+                return false;
+            }
             await Task.Delay(250, ct);
         }
     }
@@ -160,14 +175,23 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
             }
 
             var response = readTask.Result;
-            return response != null && response.Contains("\"status\":\"ok\"") ? SynthResult.Ok : SynthResult.Failed;
+            if (response != null && response.Contains("\"status\":\"ok\"")) return SynthResult.Ok;
+
+            // The server's answer says why, e.g. {"status":"error","message":"..."}.
+            _log?.Write("kokoro", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}: {response ?? "no answer"}");
+            return SynthResult.Failed;
         }
         catch (SocketException)
         {
             return SynthResult.NotListening;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            return SynthResult.Failed;
+        }
+        catch (Exception ex)
+        {
+            _log?.Write("kokoro", $"Couldn't speak {AppLog.Excerpt(text)} with voice {voiceId}", ex);
             return SynthResult.Failed;
         }
     }
@@ -185,7 +209,9 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
                 {
                     FileName = File.Exists(VenvPythonW) ? VenvPythonW : VenvPython,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    // The server reports its progress and any Python error here.
+                    RedirectStandardError = _log != null
                 };
                 psi.ArgumentList.Add(_serverScript);
                 psi.ArgumentList.Add("--model");
@@ -195,9 +221,18 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
                 psi.ArgumentList.Add("--port");
                 psi.ArgumentList.Add(Port.ToString());
                 _server = Process.Start(psi);
+                if (_server != null && _log != null)
+                {
+                    _server.ErrorDataReceived += (_, e) =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(e.Data)) _log.Write("kokoro-server", e.Data);
+                    };
+                    _server.BeginErrorReadLine();
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                _log?.Write("kokoro", "Couldn't start the Kokoro server", ex);
                 _server = null;
             }
         }
@@ -254,8 +289,8 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
                 }
             }
 
-            log.Report("Installing kokoro-onnx and soundfile (this can take a few minutes) ...");
-            if (await RunAsync(VenvPython, ["-m", "pip", "install", "--disable-pip-version-check", "kokoro-onnx", "soundfile"], log, ct) != 0)
+            log.Report($"Installing {KokoroOnnxPackage} and {SoundfilePackage} (this can take a few minutes) ...");
+            if (await RunAsync(VenvPython, ["-m", "pip", "install", "--disable-pip-version-check", KokoroOnnxPackage, SoundfilePackage], log, ct) != 0)
             {
                 log.Report("Installing the Python packages failed.");
                 return false;

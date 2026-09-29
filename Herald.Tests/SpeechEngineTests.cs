@@ -251,6 +251,45 @@ public class SpeechEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Deleting_items_removes_them_and_their_audio_and_keeps_the_rest()
+    {
+        Speech.EnqueueText("Keep one", "tester");
+        Speech.EnqueueText("Delete me", "tester");
+        Speech.EnqueueText("Keep two", "tester");
+        await _h.HistoryCount(3);
+        var doomed = _h.History.Single(i => i.SpokenText == "Delete me.");
+
+        UiThread.Invoke(() => Speech.DeleteFromHistory([doomed]));
+
+        Assert.Equal(["Keep two.", "Keep one."], _h.History.Select(i => i.SpokenText));
+        Assert.False(File.Exists(doomed.AudioFilePath));
+        Assert.Equal(2, _h.AudioFiles.Length);
+        Assert.DoesNotContain("Delete me", File.ReadAllText(_h.Paths.HistoryFile));
+        // The two messages left are neighbours now, so they get opposite shading.
+        Assert.NotEqual(_h.History[0].Band, _h.History[1].Band);
+    }
+
+    [Fact]
+    public async Task Deleting_an_item_keeps_the_audio_a_queued_copy_still_needs()
+    {
+        Speech.EnqueueText("Play me twice", "tester");
+        await _h.HistoryCount(1);
+        var original = _h.History[0];
+        _h.Player.HoldPlayback = true;
+        Speech.EnqueueText("Busy", "tester");
+        await Wait.Until(() => _h.Player.Current != null, "busy playing");
+        Speech.Requeue(original);
+        await Wait.Until(() => _h.Queue.Any(i => i.IsCopy), "copy queued");
+
+        UiThread.Invoke(() => Speech.DeleteFromHistory([original]));
+
+        Assert.True(File.Exists(original.AudioFilePath));
+        _h.Player.FinishCurrent();
+        await Wait.Until(() => _h.Player.Played.Count == 3, "copy played");
+        _h.Player.FinishCurrent();
+    }
+
+    [Fact]
     public async Task Clearing_history_deletes_its_audio()
     {
         Speech.EnqueueText("Temporary", "tester");
@@ -267,14 +306,16 @@ public class SpeechEngineTests : IDisposable
     public async Task History_survives_a_restart()
     {
         Speech.EnqueueText("First", "tester");
-        Speech.EnqueueText("Second", "other");
+        Speech.EnqueueText("**Second**", "claude");
         await _h.HistoryCount(2);
         var before = _h.History;
 
         _h.Restart();
 
-        Assert.Equal(before.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)),
-                     _h.History.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)));
+        Assert.Equal(before.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo, i.ShowAsMarkdown)),
+                     _h.History.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo, i.ShowAsMarkdown)));
+        // Claude's message is shown as Markdown, as its sender is set to; the other isn't.
+        Assert.Equal([true, false], _h.History.Select(i => i.ShowAsMarkdown));
         // Neighbouring messages get opposite shading.
         Assert.NotEqual(_h.History[0].Band, _h.History[1].Band);
     }
@@ -291,6 +332,76 @@ public class SpeechEngineTests : IDisposable
 
         await Wait.Until(() => !File.Exists(stray), "stray audio deleted");
         Assert.True(File.Exists(_h.History[0].AudioFilePath));
+    }
+
+    [Theory]
+    [InlineData(150, 10, 160, "Speed 160.")]
+    [InlineData(150, -10, 140, "Speed 140.")]
+    [InlineData(300, 10, 300, "Speed 300, fastest.")]
+    [InlineData(50, -10, 50, "Speed 50, slowest.")]
+    public async Task Faster_and_slower_step_the_speed_and_say_it(int start, int delta, int expected, string said)
+    {
+        _h.Settings.SpeedPercent = start;
+
+        Speech.ChangeSpeed(delta);
+
+        await _h.HistoryCount(1);
+        Assert.Equal(expected, _h.Settings.SpeedPercent);
+        Assert.Equal(said, _h.History[0].SpokenText);
+    }
+
+    [Fact]
+    public async Task Quick_speed_changes_only_say_the_final_speed()
+    {
+        _h.Player.HoldPlayback = true;
+        Speech.EnqueueText("Busy talking", "tester");
+        await Wait.Until(() => _h.Player.Current != null, "message playing");
+
+        // Pressed three times while the message plays: only the last one is still waiting.
+        Speech.ChangeSpeed(10);
+        Speech.ChangeSpeed(10);
+        Speech.ChangeSpeed(10);
+        _h.Player.FinishCurrent();
+        await Wait.Until(() => _h.Player.Played.Count == 2 && _h.Player.Current != null, "speed announcement playing");
+        _h.Player.FinishCurrent();
+
+        await Wait.Until(() => _h.Queue.Length == 0 && _h.History.Any(i => i.SpokenText == "Speed 180."), "all done");
+        // The replaced ones never played, so they left no trace in History or on disk.
+        Assert.Equal([("Busy talking.", QueueItemStatus.Done), ("Speed 180.", QueueItemStatus.Done)],
+                     _h.History.Reverse().Select(i => (i.SpokenText, i.Status)));
+        Assert.Equal(2, _h.AudioFiles.Length);
+    }
+
+    [Fact]
+    public async Task A_new_speed_cuts_off_the_speed_announcement_that_is_playing_and_replaces_it()
+    {
+        _h.Player.HoldPlayback = true;
+        Speech.ChangeSpeed(10);
+        await Wait.Until(() => _h.Player.Current != null, "first announcement playing");
+
+        Speech.ChangeSpeed(10);
+
+        await Wait.Until(() => _h.Player.Played.Count == 2 && _h.Player.Current != null, "second announcement playing");
+        _h.Player.FinishCurrent();
+        await Wait.Until(() => _h.History is [{ SpokenText: "Speed 170.", Status: QueueItemStatus.Done }], "only the new speed in History");
+        Assert.Single(_h.AudioFiles);
+    }
+
+    [Fact]
+    public async Task History_never_lists_two_speed_changes_in_a_row()
+    {
+        Speech.EnqueueText("Text one", "tester");
+        Speech.ChangeSpeed(10);
+        await _h.HistoryCount(2);
+        Speech.ChangeSpeed(10);
+        await Wait.Until(() => _h.History[0].SpokenText == "Speed 170.", "second speed in History");
+        Speech.EnqueueText("Text two", "tester");
+        Speech.ChangeSpeed(-10);
+        await Wait.Until(() => _h.History[0].SpokenText == "Speed 160.", "third speed in History");
+
+        // Text in between keeps a speed change; one straight after another replaces it.
+        Assert.Equal(["Text one.", "Speed 170.", "Text two.", "Speed 160."], _h.History.Reverse().Select(i => i.SpokenText));
+        Assert.Equal(4, _h.AudioFiles.Length);
     }
 
     [Fact]
