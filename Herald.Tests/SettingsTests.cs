@@ -100,7 +100,8 @@ public class AppSettingsTests : IDisposable
             Volume = 40,
             Theme = ThemeChoice.Dark,
             ReadClipboardAutomatically = true,
-            HistoryLimit = 50
+            HistoryLimit = 50,
+            HookPort = 9000
         };
 
         var reloaded = new AppSettings(FilePath);
@@ -110,6 +111,7 @@ public class AppSettingsTests : IDisposable
         Assert.Equal(ThemeChoice.Dark, reloaded.Theme);
         Assert.True(reloaded.ReadClipboardAutomatically);
         Assert.Equal(50, reloaded.HistoryLimit);
+        Assert.Equal(9000, reloaded.HookPort);
     }
 
     [Theory]
@@ -122,6 +124,8 @@ public class AppSettingsTests : IDisposable
     [InlineData(nameof(AppSettings.HistoryLimit), 1, 10)]
     [InlineData(nameof(AppSettings.ChunkThreshold), 10_000, 5000)]
     [InlineData(nameof(AppSettings.ChunkTargetLength), 5, 40)]
+    [InlineData(nameof(AppSettings.HookPort), 80, 1024)]
+    [InlineData(nameof(AppSettings.HookPort), 70000, 65535)]
     public void Values_are_kept_in_range(string property, int value, int expected)
     {
         var settings = new AppSettings(FilePath);
@@ -218,7 +222,7 @@ public class AppSettingsTests : IDisposable
 
         Assert.Equal(
             ["SpeedPercent", "ChunkThreshold", "ChunkTargetLength", "HistoryLimit", "AskToConnectClaude",
-             "ReadClipboardAutomatically", "TrayHintShown", "Theme", "Volume", "UiScalePercent"],
+             "ReadClipboardAutomatically", "TrayHintShown", "Theme", "Volume", "UiScalePercent", "HookPort"],
             json.Select(p => p.Key));
         Assert.Equal("Light", (string?)json["Theme"]);
     }

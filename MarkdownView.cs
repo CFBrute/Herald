@@ -8,6 +8,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Markdig;
+using MdTables = Markdig.Extensions.Tables;
 using Md = Markdig.Syntax;
 using MdInlines = Markdig.Syntax.Inlines;
 
@@ -31,7 +32,8 @@ public class MarkdownView : ContentControl
         set => SetValue(TextProperty, value);
     }
 
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().Build();
+    // Plain CommonMark plus GitHub-style tables, which Claude often writes.
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UsePipeTables().Build();
     private static readonly FontFamily CodeFont = new("Consolas, Courier New");
 
     public MarkdownView()
@@ -50,7 +52,8 @@ public class MarkdownView : ContentControl
         foreach (var block in container)
         {
             if (Block(block) is not { } element) continue;
-            if (panel.Children.Count > 0) element.Margin = new Thickness(0, spacing, 0, 0);
+            // A heading starts a new section, so it gets more room above it.
+            if (panel.Children.Count > 0) element.Margin = new Thickness(0, block is Md.HeadingBlock ? spacing + 8 : spacing, 0, 0);
             panel.Children.Add(element);
         }
         return panel;
@@ -64,6 +67,7 @@ public class MarkdownView : ContentControl
         Md.ListBlock list => List(list),
         Md.QuoteBlock quote => Quote(quote),
         Md.ThematicBreakBlock => new Separator(),
+        MdTables.Table table => TableGrid(table),
         Md.LeafBlock leaf => Plain(leaf.Lines.ToString()),
         Md.ContainerBlock container => Blocks(container, spacing: 4),
         _ => null
@@ -94,7 +98,8 @@ public class MarkdownView : ContentControl
         {
             CornerRadius = new CornerRadius(3),
             Padding = new Thickness(6, 4, 6, 4),
-            Child = new TextBlock { Text = text, FontFamily = CodeFont, TextWrapping = TextWrapping.Wrap }
+            // Kept clear of the Copy button in the corner.
+            Child = new TextBlock { Text = text, FontFamily = CodeFont, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 48, 0) }
         };
         border.SetResourceReference(Border.BackgroundProperty, "CodeBackground");
 
@@ -159,6 +164,48 @@ public class MarkdownView : ContentControl
             panel.Children.Add(row);
         }
         return panel;
+    }
+
+    /// <summary>
+    /// A table in a thin frame, the header row in bold. Columns share the width by how much
+    /// text they hold (capped, so one long cell doesn't squeeze the rest), and every cell
+    /// wraps, so a table never runs off the side of a list.
+    /// </summary>
+    private static Border TableGrid(MdTables.Table table)
+    {
+        var rows = table.OfType<MdTables.TableRow>().ToList();
+        var columns = rows.Max(r => r.Count);
+        var grid = new Grid();
+        for (var c = 0; c < columns; c++)
+        {
+            var longest = rows.Where(r => c < r.Count).Max(r => r[c].Span.Length);
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Min(longest, 40) + 5, GridUnitType.Star) });
+        }
+
+        for (var r = 0; r < rows.Count; r++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (var c = 0; c < rows[r].Count; c++)
+            {
+                var content = Blocks((Md.ContainerBlock)rows[r][c], spacing: 2);
+                if (rows[r].IsHeader) content.SetValue(TextElement.FontWeightProperty, FontWeights.Bold);
+
+                var cell = new Border
+                {
+                    BorderThickness = new Thickness(0, 0, c < columns - 1 ? 1 : 0, r < rows.Count - 1 ? 1 : 0),
+                    Padding = new Thickness(6, 3, 6, 3),
+                    Child = content
+                };
+                cell.SetResourceReference(Border.BorderBrushProperty, "CodeBackground");
+                Grid.SetRow(cell, r);
+                Grid.SetColumn(cell, c);
+                grid.Children.Add(cell);
+            }
+        }
+
+        var frame = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(3), Child = grid };
+        frame.SetResourceReference(Border.BorderBrushProperty, "CodeBackground");
+        return frame;
     }
 
     private static Border Quote(Md.QuoteBlock quote)

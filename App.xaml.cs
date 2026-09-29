@@ -47,7 +47,7 @@ public partial class App : Application
         var senders = new SenderSettingsStore(paths.SenderSettingsFile);
         var languages = new LanguageProfileStore(paths.LanguageProfilesFile);
         var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log);
-        var hookServer = new HookServer(speech, settings, log: log);
+        var hookServer = new HookServer(speech, settings, log: log, endpointFile: paths.EndpointFile);
         _services = new AppServices(log, paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
                                     speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
 
@@ -77,8 +77,10 @@ public partial class App : Application
             // This process was just started by the user, so it may hand foreground rights on.
             AllowSetForegroundWindow(-1);
 
+            // The running Herald's port, from where it says it listens.
+            var port = HookServer.ReadEndpointPort(AppPaths.ForCurrentUser().EndpointFile) ?? HookServer.DefaultPort;
             using var client = new TcpClient();
-            if (!client.ConnectAsync(IPAddress.Loopback, HookServer.Port).Wait(1000)) return;
+            if (!client.ConnectAsync(IPAddress.Loopback, port).Wait(1000)) return;
             var bytes = Encoding.UTF8.GetBytes("{\"type\":\"show\"}\n");
             client.GetStream().Write(bytes, 0, bytes.Length);
             client.GetStream().ReadTimeout = 2000;

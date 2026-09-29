@@ -32,7 +32,8 @@ public partial class MainWindow : Window
         _services = services;
         _engine = services.Speech;
         DataContext = _engine;
-        StatusText.Text = $"Listening on 127.0.0.1:{HookServer.Port}";
+        ShowHookStatus();
+        services.HookServer.StatusChanged += () => Dispatcher.BeginInvoke(ShowHookStatus);
         VersionText.Text = BuildInfo.Label;
         VersionText.ToolTip = BuildInfo.Details;
         ContentRendered += (_, _) => OfferClaudeConnection();
@@ -134,6 +135,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Shows the window again, e.g. when Herald is started a second time.</summary>
+    /// <summary>The hook server's port, or why it isn't listening (in the warning colour).</summary>
+    private void ShowHookStatus()
+    {
+        var server = _services.HookServer;
+        StatusText.Text = server.StatusText;
+        StatusText.SetResourceReference(TextBlock.ForegroundProperty, server.Problem == null ? "SubtleText" : "WarningText");
+    }
+
     private void BringToFront()
     {
         Show();

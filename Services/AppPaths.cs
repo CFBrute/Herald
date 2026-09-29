@@ -24,6 +24,8 @@ public class AppPaths
     public string HotkeysFile => Path.Combine(DataDir, "hotkeys.json");
     public string LanguageProfilesFile => Path.Combine(DataDir, "language-profiles.json");
     public string HistoryFile => Path.Combine(DataDir, "history.json");
+    /// <summary>Where Herald says which port it listens on, while it does (see HookServer).</summary>
+    public string EndpointFile => Path.Combine(DataDir, "endpoint.json");
 
     public string CrashLog => Path.Combine(DataDir, "crash.log");
     public string PlaybackLog => Path.Combine(DataDir, "playback.log");

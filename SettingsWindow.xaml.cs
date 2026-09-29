@@ -461,6 +461,7 @@ public partial class SettingsWindow : Window
             new("Language profiles", paths.LanguageProfilesFile, false),
             new("Hotkeys", paths.HotkeysFile, false),
             new("History list", paths.HistoryFile, false),
+            new("Herald's address for senders (endpoint.json, only while running)", paths.EndpointFile, false),
             new("Herald log (errors and warnings)", paths.HeraldLog, false),
             new("Crash log", paths.CrashLog, false),
             new("Playback log", paths.PlaybackLog, false),
@@ -471,6 +472,8 @@ public partial class SettingsWindow : Window
     }
 
     private void RefreshFiles_Click(object sender, RoutedEventArgs e) => RefreshFiles();
+
+    private void HowTo_Click(object sender, RoutedEventArgs e) => new HowToWindow(_services) { Owner = this }.Show();
 
     private void Cleanup_Click(object sender, RoutedEventArgs e)
     {

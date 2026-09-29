@@ -22,53 +22,168 @@ file class Command
     public string? Sender { get; set; }
 }
 
+/// <summary>
+/// Herald's inbox: a local-only TCP server taking one JSON command per connection, from
+/// Claude Code's hook and anything else on this PC. While it listens, Herald's port is in
+/// endpoint.json, so senders find it even after the port was changed in Settings.
+/// </summary>
 public class HookServer
 {
-    public const int Port = 8766;
+    /// <summary>Used until the user picks another port, and by senders that can't read endpoint.json.</summary>
+    public const int DefaultPort = AppSettings.DefaultHookPort;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly SpeechEngine _engine;
     private readonly AppSettings _settings;
     private readonly AppLog? _log;
-    private readonly TcpListener _listener;
-    private readonly CancellationTokenSource _cts = new();
+    private readonly int? _fixedPort;
+    private readonly string? _endpointFile;
+    private readonly Lock _gate = new();
+    private TcpListener? _listener;
+    private CancellationTokenSource? _cts;
+    private bool _started;
 
     /// <summary>Another Herald was started; it asks this one to bring its window forward.</summary>
     public event Action? ShowRequested;
 
-    /// <param name="port">Herald's fixed <see cref="Port"/> unless given; 0 picks any free port.</param>
-    public HookServer(SpeechEngine engine, AppSettings settings, int port = Port, AppLog? log = null)
+    /// <summary>Listening started, stopped or failed; may be raised on any thread.</summary>
+    public event Action? StatusChanged;
+
+    /// <param name="port">A fixed port instead of the one in the settings; 0 picks any free port (tests).</param>
+    /// <param name="endpointFile">Where to say which port is listened on; none in tests.</param>
+    public HookServer(SpeechEngine engine, AppSettings settings, int? port = null, AppLog? log = null, string? endpointFile = null)
     {
         _log = log;
         _engine = engine;
         _settings = settings;
-        _listener = new TcpListener(IPAddress.Loopback, port);
+        _fixedPort = port;
+        _endpointFile = endpointFile;
+        _settings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AppSettings.HookPort) && _fixedPort == null) Restart();
+        };
     }
 
-    /// <summary>The port actually listened on, once started.</summary>
-    public int ListeningPort => ((IPEndPoint)_listener.LocalEndpoint).Port;
+    /// <summary>The port being listened on, or null when not listening.</summary>
+    public int? ListeningPort { get; private set; }
+
+    /// <summary>Why Herald isn't listening (e.g. another program has the port), or null.</summary>
+    public string? Problem { get; private set; }
+
+    /// <summary>For the main window's status line.</summary>
+    public string StatusText => ListeningPort is { } port ? $"Listening on 127.0.0.1:{port}" : Problem ?? "Not listening";
 
     public void Start()
     {
-        _listener.Start();
-        _ = AcceptLoopAsync(_cts.Token);
+        lock (_gate)
+        {
+            _started = true;
+            Listen();
+        }
     }
 
     public void Stop()
     {
-        _cts.Cancel();
-        _listener.Stop();
+        lock (_gate)
+        {
+            _started = false;
+            StopListening();
+        }
+        StatusChanged?.Invoke();
     }
 
-    private async Task AcceptLoopAsync(CancellationToken ct)
+    /// <summary>Moves to the port now in the settings.</summary>
+    private void Restart()
+    {
+        lock (_gate)
+        {
+            if (!_started) return;
+            StopListening();
+            Listen();
+        }
+    }
+
+    private void Listen()
+    {
+        var port = _fixedPort ?? _settings.HookPort;
+        var listener = new TcpListener(IPAddress.Loopback, port);
+        try
+        {
+            listener.Start();
+        }
+        catch (SocketException ex)
+        {
+            // A port another program has, or one Windows keeps for itself (Hyper-V and the like).
+            Problem = ex.SocketErrorCode switch
+            {
+                SocketError.AddressAlreadyInUse => $"Port {port} is in use by another program; choose another in Settings",
+                SocketError.AccessDenied => $"Windows doesn't allow port {port}; choose another in Settings",
+                _ => $"Can't listen on port {port} ({ex.Message}); choose another in Settings"
+            };
+            ListeningPort = null;
+            _log?.Write("hook", Problem);
+            DeleteEndpoint();
+            StatusChanged?.Invoke();
+            return;
+        }
+
+        _listener = listener;
+        _cts = new CancellationTokenSource();
+        ListeningPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Problem = null;
+        WriteEndpoint();
+        _log?.Write("hook", $"Listening on 127.0.0.1:{ListeningPort}");
+        _ = AcceptLoopAsync(listener, _cts.Token);
+        StatusChanged?.Invoke();
+    }
+
+    private void StopListening()
+    {
+        _cts?.Cancel();
+        _listener?.Stop();
+        _listener = null;
+        _cts = null;
+        ListeningPort = null;
+        DeleteEndpoint();
+    }
+
+    // Property names are part of the file's format for other programs; keep them.
+    private record Endpoint(string Host, int Port, int Pid, string Version);
+
+    private void WriteEndpoint()
+    {
+        if (_endpointFile == null || ListeningPort is not { } port) return;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(_endpointFile))!);
+        SafeFile.WriteJson(_endpointFile, new Endpoint("127.0.0.1", port, Environment.ProcessId, BuildInfo.Version), EndpointJson);
+    }
+
+    private static readonly JsonSerializerOptions EndpointJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+
+    /// <summary>Only Herald's own: another Herald that has since started may have written its own.</summary>
+    private void DeleteEndpoint()
+    {
+        if (_endpointFile == null) return;
+        if (SafeFile.ReadJson<Endpoint>(_endpointFile, EndpointJson) is { } endpoint && endpoint.Pid != Environment.ProcessId) return;
+        SafeFile.TryDelete(_endpointFile);
+    }
+
+    /// <summary>
+    /// The port a running Herald said it listens on, or null if there's no such file (Herald
+    /// isn't running, or is older than this file). For senders written in C#; others read
+    /// the same JSON: { "host": "127.0.0.1", "port": 8766, "pid": ..., "version": ... }.
+    /// </summary>
+    public static int? ReadEndpointPort(string endpointFile) =>
+        SafeFile.ReadJson<Endpoint>(endpointFile, EndpointJson) is { Port: > 0 } endpoint ? endpoint.Port : null;
+
+    private async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             TcpClient client;
             try
             {
-                client = await _listener.AcceptTcpClientAsync(ct);
+                client = await listener.AcceptTcpClientAsync(ct);
             }
             catch (OperationCanceledException)
             {
@@ -91,7 +206,8 @@ public class HookServer
         {
             using var stream = client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            using var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
+            // Plain UTF-8: without "new UTF8Encoding(false)" every reply would start with a byte order mark.
+            using var writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
 
             line = await reader.ReadLineAsync(ct);
             if (line == null) return;

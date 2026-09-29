@@ -279,7 +279,7 @@ public class ClaudeCodeIntegration
         var script = ScriptPathOf(command);
         try
         {
-            return File.Exists(script) && File.ReadAllText(script).Contains(HookServer.Port.ToString());
+            return File.Exists(script) && File.ReadAllText(script).Contains(HookServer.DefaultPort.ToString());
         }
         catch
         {
@@ -305,10 +305,19 @@ public class ClaudeCodeIntegration
     private void WriteHookScript()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_hookScriptPath)!);
+        // Herald's data folder holds both: <data>\integrations\claude-hook.ps1 and <data>\endpoint.json.
+        var endpointFile = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(_hookScriptPath)!)!, "endpoint.json");
         var script = $$"""
             # Herald hook for Claude Code (MessageDisplay). Written by Herald; changes are overwritten.
-            # Forwards each block of Claude's reply to Herald on 127.0.0.1:{{HookServer.Port}}, tagged "claude".
+            # Forwards each block of Claude's reply to Herald on 127.0.0.1, tagged "claude", at the
+            # port Herald says it listens on in endpoint.json ({{HookServer.DefaultPort}} if that can't be read).
             $ErrorActionPreference = "SilentlyContinue"
+
+            $port = {{HookServer.DefaultPort}}
+            try {
+                $endpoint = Get-Content -Raw -LiteralPath '{{endpointFile.Replace("'", "''")}}' | ConvertFrom-Json
+                if ($endpoint.port) { $port = [int]$endpoint.port }
+            } catch {}
 
             # PowerShell 5.1 reads stdin with the OEM codepage by default, which mangles non-ASCII text.
             [Console]::InputEncoding = [System.Text.Encoding]::UTF8
@@ -323,7 +332,7 @@ public class ClaudeCodeIntegration
             # Must not write to stdout: MessageDisplay treats hook output as replacement display text.
             try {
                 $client = New-Object System.Net.Sockets.TcpClient
-                $connect = $client.ConnectAsync("127.0.0.1", {{HookServer.Port}})
+                $connect = $client.ConnectAsync("127.0.0.1", $port)
                 if ($connect.Wait(500) -and $client.Connected) {
                     $stream = $client.GetStream()
                     $stream.ReadTimeout = 3000

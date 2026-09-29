@@ -28,7 +28,7 @@ public class HookServerTests : IDisposable
     private async Task<string?> Send(string line)
     {
         using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort);
+        await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort!.Value);
         using var stream = client.GetStream();
         await stream.WriteAsync(Encoding.UTF8.GetBytes(line + "\n"));
         using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -116,6 +116,20 @@ public class HookServerTests : IDisposable
     }
 
     [Fact]
+    public async Task The_reply_is_plain_utf8_without_a_byte_order_mark()
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, _server.ListeningPort!.Value);
+        using var stream = client.GetStream();
+        await stream.WriteAsync(Encoding.UTF8.GetBytes("""{ "type": "skip" }""" + "\n"));
+
+        var first = new byte[1];
+        await stream.ReadExactlyAsync(first);
+
+        Assert.Equal((byte)'{', first[0]);
+    }
+
+    [Fact]
     public async Task A_null_command_gets_an_error()
     {
         Assert.Equal("""{"status":"error"}""", await Send("null"));
@@ -147,5 +161,130 @@ public class HookServerTests : IDisposable
 
         Assert.All(replies, r => Assert.Equal("ok", (string?)r["status"]));
         await _h.HistoryCount(5);
+    }
+}
+
+/// <summary>The hook server on the port from the settings, as in Herald, rather than a fixed one.</summary>
+public class HookServerPortTests : IDisposable
+{
+    private readonly SpeechHarness _h = new();
+    private readonly HookServer _server;
+
+    public HookServerPortTests() =>
+        _server = new HookServer(_h.Speech, _h.Settings, log: new AppLog(_h.Paths.HeraldLog, _h.Paths.HeraldOldLog),
+                                 endpointFile: _h.Paths.EndpointFile);
+
+    public void Dispose()
+    {
+        _server.Stop();
+        _h.Dispose();
+    }
+
+    /// <summary>A port nothing listens on right now.</summary>
+    private static int FreePort()
+    {
+        var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
+    }
+
+    private static async Task<bool> Answers(int port)
+    {
+        using var client = new TcpClient();
+        try
+        {
+            await client.ConnectAsync(IPAddress.Loopback, port).WaitAsync(TimeSpan.FromSeconds(2));
+            var stream = client.GetStream();
+            await stream.WriteAsync(Encoding.UTF8.GetBytes("""{ "type": "skip" }""" + "\n"));
+            return (await new StreamReader(stream).ReadLineAsync())?.Contains("\"ok\"") == true;
+        }
+        catch (Exception ex) when (ex is SocketException or TimeoutException)
+        {
+            // Windows takes about two seconds to refuse a port nobody listens on.
+            return false;
+        }
+    }
+
+    [Fact]
+    public async Task Listens_on_the_port_in_the_settings_and_says_so_in_endpoint_json()
+    {
+        var port = FreePort();
+        _h.Settings.HookPort = port;
+
+        _server.Start();
+
+        Assert.Equal(port, _server.ListeningPort);
+        Assert.True(await Answers(port));
+        Assert.Equal($"Listening on 127.0.0.1:{port}", _server.StatusText);
+        var json = JsonNode.Parse(File.ReadAllText(_h.Paths.EndpointFile))!;
+        Assert.Equal(("127.0.0.1", port, Environment.ProcessId), ((string?)json["host"], (int)json["port"]!, (int)json["pid"]!));
+        Assert.Equal(port, HookServer.ReadEndpointPort(_h.Paths.EndpointFile));
+
+        _server.Stop();
+
+        Assert.False(File.Exists(_h.Paths.EndpointFile));
+        Assert.Null(_server.ListeningPort);
+    }
+
+    [Fact]
+    public async Task A_taken_port_is_reported_instead_of_crashing_and_another_can_be_chosen()
+    {
+        var other = new TcpListener(IPAddress.Loopback, FreePort());
+        other.Start();
+        try
+        {
+            var taken = ((IPEndPoint)other.LocalEndpoint).Port;
+            _h.Settings.HookPort = taken;
+
+            _server.Start();
+
+            Assert.Null(_server.ListeningPort);
+            Assert.Equal($"Port {taken} is in use by another program; choose another in Settings", _server.StatusText);
+            Assert.False(File.Exists(_h.Paths.EndpointFile));
+            Assert.Contains($"| hook | Port {taken} is in use by another program", File.ReadAllText(_h.Paths.HeraldLog));
+
+            var free = FreePort();
+            _h.Settings.HookPort = free;
+
+            Assert.Equal(free, _server.ListeningPort);
+            Assert.Null(_server.Problem);
+            Assert.True(await Answers(free));
+            Assert.Equal(free, HookServer.ReadEndpointPort(_h.Paths.EndpointFile));
+        }
+        finally
+        {
+            other.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task Changing_the_port_moves_herald_over_straight_away()
+    {
+        var first = FreePort();
+        _h.Settings.HookPort = first;
+        _server.Start();
+        var changes = 0;
+        _server.StatusChanged += () => changes++;
+
+        var second = FreePort();
+        _h.Settings.HookPort = second;
+
+        Assert.True(await Answers(second));
+        Assert.False(await Answers(first));
+        Assert.Equal(second, HookServer.ReadEndpointPort(_h.Paths.EndpointFile));
+        Assert.True(changes > 0);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not json")]
+    [InlineData("""{ "host": "127.0.0.1" }""")]
+    public void A_missing_or_unreadable_endpoint_gives_no_port(string? content)
+    {
+        if (content != null) File.WriteAllText(_h.Paths.EndpointFile, content);
+
+        Assert.Null(HookServer.ReadEndpointPort(_h.Paths.EndpointFile));
     }
 }

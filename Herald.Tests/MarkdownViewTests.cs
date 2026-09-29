@@ -99,6 +99,26 @@ public class MarkdownViewTests
     }
 
     [Fact]
+    public void Tables_become_a_grid_with_a_bold_header_row()
+    {
+        var (rows, columns, cells, headerWeight) = OnUiThread(() =>
+        {
+            var frame = (Border)Render("| Command | Does |\n|---|---|\n| `skip` | Skips a part |\n| `show` | Shows the window |").Children[0];
+            var grid = (Grid)frame.Child;
+            var texts = grid.Children.Cast<Border>()
+                .Select(b => new TextRange(((TextBlock)((StackPanel)b.Child).Children[0]).ContentStart,
+                                           ((TextBlock)((StackPanel)b.Child).Children[0]).ContentEnd).Text)
+                .ToArray();
+            return (grid.RowDefinitions.Count, grid.ColumnDefinitions.Count, texts,
+                    ((TextBlock)((StackPanel)((Border)grid.Children[0]).Child).Children[0]).FontWeight);
+        });
+
+        Assert.Equal((3, 2), (rows, columns));
+        Assert.Equal(["Command", "Does", "skip", "Skips a part", "show", "Shows the window"], cells);
+        Assert.Equal(FontWeights.Bold, headerWeight);
+    }
+
+    [Fact]
     public void Single_line_breaks_are_kept()
     {
         var hasBreak = OnUiThread(() =>

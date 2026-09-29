@@ -1,0 +1,17 @@
+<Window x:Class="Herald.HowToWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Herald"
+        Title="Talking to Herald" Width="760" Height="680"
+        WindowStartupLocation="CenterOwner"
+        Foreground="{DynamicResource PrimaryText}">
+    <DockPanel x:Name="Root" Margin="16">
+        <!-- Where this Herald listens right now: the page itself talks about the usual port. -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource CodeBackground}" CornerRadius="3" Padding="10,6" Margin="0,0,0,12">
+            <TextBlock x:Name="CurrentAddress" TextWrapping="Wrap"/>
+        </Border>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <local:MarkdownView x:Name="Page" Margin="0,0,8,0"/>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

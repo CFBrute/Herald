@@ -84,6 +84,18 @@
                         <TextBlock Text="History items (10-5000)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{DynamicResource SubtleText}"/>
                     </StackPanel>
 
+                    <TextBlock Margin="0,20,0,8" TextWrapping="Wrap"
+                               Text="Claude Code and other programs on this PC send Herald messages through a local port. Change it only if another program needs the same one; Herald switches right away."/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Listen on port" VerticalAlignment="Center" Width="190"/>
+                        <TextBox Text="{Binding HookPort}" Width="70" VerticalContentAlignment="Center"/>
+                        <TextBlock Text="(1024-65535, normally 8766)" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{DynamicResource SubtleText}"/>
+                    </StackPanel>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="0,4,0,0"
+                               Text="Senders find the port in endpoint.json in Herald's data folder (Files tab), so Claude Code keeps working after a change. Your own scripts can read it there too."/>
+                    <Button Content="How other programs can talk to Herald..." HorizontalAlignment="Left" Padding="10,2" Margin="0,8,0,0"
+                            Click="HowTo_Click"/>
+
                     <CheckBox x:Name="StartWithWindowsBox" Content="Start Herald when I sign in to Windows (starts in the tray)"
                               Margin="0,20,0,4" Checked="StartWithWindows_Changed" Unchecked="StartWithWindows_Changed"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"

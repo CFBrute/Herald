@@ -80,6 +80,8 @@
   <ItemGroup>
     <!-- The phonemes Kokoro knows, from kokoro-onnx's config.json. -->
     <EmbeddedResource Include="Services\Engines\Kokoro\kokoro-vocab.json" LogicalName="kokoro-vocab.json" />
+    <!-- How other programs talk to Herald, shown from Settings. -->
+    <EmbeddedResource Include="docs\talking-to-herald.md" LogicalName="talking-to-herald.md" />
   </ItemGroup>
 
 </Project>

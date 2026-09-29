@@ -66,6 +66,20 @@ public class AppSettings : ObservableObject
         set => Set(ref _uiScalePercent, Math.Clamp(value, 70, 130));
     }
 
+    public const int DefaultHookPort = 8766;
+
+    private int _hookPort = DefaultHookPort;
+    /// <summary>
+    /// The local port Herald listens on for messages (Claude Code's hook, other tools).
+    /// Senders find it in endpoint.json, so it can be changed without updating them.
+    /// Below 1024 needs admin rights, so that's where the range starts.
+    /// </summary>
+    public int HookPort
+    {
+        get => _hookPort;
+        set => Set(ref _hookPort, Math.Clamp(value, 1024, 65535));
+    }
+
     private int _volume = 100;
     /// <summary>
     /// Herald's own playback volume, 0-100%. Scales the audio Herald plays (all engines),
@@ -124,6 +138,7 @@ public class AppSettings : ObservableObject
         if (Enum.TryParse<ThemeChoice>(dto.Theme, out var theme)) Theme = theme;
         if (dto.Volume is { } volume) Volume = volume;
         if (dto.UiScalePercent is { } scale) UiScalePercent = scale;
+        if (dto.HookPort is { } port) HookPort = port;
         _loading = false;
     }
 
@@ -132,13 +147,13 @@ public class AppSettings : ObservableObject
     private void Save() =>
         SafeFile.WriteJson(_filePath, new SettingsDto(_speedPercent, _chunkThreshold, _chunkTargetLength, _historyLimit,
                                                       _askToConnectClaude, _readClipboardAutomatically, _trayHintShown,
-                                                      _theme.ToString(), _volume, _uiScalePercent));
+                                                      _theme.ToString(), _volume, _uiScalePercent, _hookPort));
 
     // Property names are part of the file format; keep them when renaming properties.
     private record SettingsDto(int SpeedPercent, int ChunkThreshold = 0, int ChunkTargetLength = 0, int HistoryLimit = 0,
                                bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null,
                                bool? TrayHintShown = null, string? Theme = null, int? Volume = null,
-                               int? UiScalePercent = null);
+                               int? UiScalePercent = null, int? HookPort = null);
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string name = "")
     {

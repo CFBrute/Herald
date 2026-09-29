@@ -35,7 +35,7 @@ public class ClaudeCodeIntegrationTests : IDisposable
     {
         var path = Path.Combine(_claudeDir, "scripts", talksToHerald ? "stream-response.ps1" : "other.ps1");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, talksToHerald ? $"$client.ConnectAsync('127.0.0.1', {HookServer.Port})" : "Write-Host hi");
+        File.WriteAllText(path, talksToHerald ? $"$client.ConnectAsync('127.0.0.1', {HookServer.DefaultPort})" : "Write-Host hi");
         return path;
     }
 
@@ -59,7 +59,9 @@ public class ClaudeCodeIntegrationTests : IDisposable
         Assert.Equal(10, (int)hook["timeout"]!);
 
         var script = File.ReadAllText(_hookScript);
-        Assert.Contains($"127.0.0.1\", {HookServer.Port}", script);
+        // The port comes from endpoint.json, with the usual one if that can't be read.
+        Assert.Contains(Path.Combine(_dir.Path, "herald", "endpoint.json"), script);
+        Assert.Contains($"$port = {HookServer.DefaultPort}", script);
         Assert.Contains("sender = \"claude\"", script);
         Assert.Equal(ClaudeConnectionState.Connected, _claude.GetStatus().State);
     }
@@ -200,5 +202,53 @@ public class ClaudeCodeIntegrationTests : IDisposable
         _claude.UpdateHookScriptIfConnected();
 
         Assert.Contains("MessageDisplay", File.ReadAllText(_hookScript));
+    }
+}
+
+/// <summary>The real hook script, run by PowerShell as Claude Code runs it, against a Herald on an unusual port.</summary>
+public class ClaudeHookScriptTests : IDisposable
+{
+    private readonly TempFolder _dir = new();
+    private readonly SpeechHarness _h = new();
+
+    public void Dispose()
+    {
+        _h.Dispose();
+        _dir.Dispose();
+    }
+
+    [Fact]
+    public async Task The_hook_script_finds_herald_on_whatever_port_endpoint_json_names()
+    {
+        var herald = Path.Combine(_dir.Path, "herald");
+        var server = new HookServer(_h.Speech, _h.Settings, port: 0, endpointFile: Path.Combine(herald, "endpoint.json"));
+        server.Start();
+        try
+        {
+            Assert.NotEqual(HookServer.DefaultPort, server.ListeningPort);
+            // Without it the script would fall back to 8766: the Herald actually running on this PC.
+            Assert.Equal(server.ListeningPort, HookServer.ReadEndpointPort(Path.Combine(herald, "endpoint.json")));
+            var claude = new ClaudeCodeIntegration(Path.Combine(herald, "integrations", "claude-hook.ps1"), Path.Combine(_dir.Path, ".claude"));
+            claude.Connect();
+
+            var run = new System.Diagnostics.ProcessStartInfo("powershell",
+                $"-NoProfile -ExecutionPolicy Bypass -File \"{Path.Combine(herald, "integrations", "claude-hook.ps1")}\"")
+            {
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var hook = System.Diagnostics.Process.Start(run)!;
+            await hook.StandardInput.WriteAsync("""{ "delta": "Hello from the hook" }""");
+            hook.StandardInput.Close();
+            await hook.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+            await _h.HistoryCount(1);
+            Assert.Equal(("claude", "Hello from the hook."), (_h.History[0].Sender, _h.History[0].SpokenText));
+        }
+        finally
+        {
+            server.Stop();
+        }
     }
 }
