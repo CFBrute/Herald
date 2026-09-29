@@ -10,7 +10,7 @@ namespace Herald.Services;
 /// </summary>
 public static class TextFilter
 {
-    private static readonly Regex CodeBlock = new(@"```[\s\S]*?```", RegexOptions.Compiled);
+    internal static readonly Regex CodeBlock = new(@"```[\s\S]*?```", RegexOptions.Compiled);
     private static readonly Regex InlineCode = new(@"`([^`]+)`", RegexOptions.Compiled);
     private static readonly Regex Bold = new(@"\*\*([^\*]+)\*\*", RegexOptions.Compiled);
     // Only a real Markdown heading ("## Title" at the start of a line), so "C#" keeps its '#'.
@@ -22,7 +22,7 @@ public static class TextFilter
     private static readonly Regex SpaceBeforePunctuation = new(@"[ \t]+([,.;:!?])", RegexOptions.Compiled);
 
     // Long text is split into parts downstream; this only guards against absurd input.
-    private const int MaxLength = 20000;
+    public const int MaxLength = 20000;
 
     public static string Clean(string text, string filterCharacters, IReadOnlyList<ReplacementRule> replacements)
     {

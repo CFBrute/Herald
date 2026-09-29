@@ -154,7 +154,10 @@
                         <DataTemplate>
                             <DockPanel>
                             <Border DockPanel.Dock="Left" Style="{StaticResource BandStripe}"/>
-                            <StackPanel Background="Transparent" Margin="0,3,4,3" ToolTip="{Binding SynthesisInfo}">
+                            <StackPanel Background="Transparent" Margin="0,3,4,3">
+                                <StackPanel.ToolTip>
+                                    <TextBlock Text="{Binding Details}" TextWrapping="Wrap" MaxWidth="450"/>
+                                </StackPanel.ToolTip>
                                 <StackPanel.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Select text" Click="SelectText_Click"/>
@@ -200,7 +203,10 @@
                         <DataTemplate>
                             <DockPanel>
                             <Border DockPanel.Dock="Left" Style="{StaticResource BandStripe}"/>
-                            <StackPanel Background="Transparent" Margin="0,3,4,3" ToolTip="{Binding SynthesisInfo}">
+                            <StackPanel Background="Transparent" Margin="0,3,4,3">
+                                <StackPanel.ToolTip>
+                                    <TextBlock Text="{Binding Details}" TextWrapping="Wrap" MaxWidth="450"/>
+                                </StackPanel.ToolTip>
                                 <StackPanel.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="Play again" FontWeight="Bold" Click="PlayAgain_Click"/>

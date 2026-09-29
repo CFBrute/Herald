@@ -44,7 +44,7 @@ public class HookServerTests : IDisposable
 
         Assert.Equal("ok", (string?)reply["status"]);
         await _h.HistoryCount(1);
-        Assert.Equal(("claude", "Hi from Claude."), (_h.History[0].Sender, _h.History[0].Text));
+        Assert.Equal(("claude", "Hi from Claude."), (_h.History[0].Sender, _h.History[0].SpokenText));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class HookServerTests : IDisposable
         await Command("""{ "Type": "speak", "TEXT": "Loud", "Sender": "x" }""");
 
         await _h.HistoryCount(1);
-        Assert.Equal("Loud.", _h.History[0].Text);
+        Assert.Equal("Loud.", _h.History[0].SpokenText);
     }
 
     [Fact]

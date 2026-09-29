@@ -105,7 +105,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     // Property names are part of history.json; keep them when renaming.
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
-                                  string? Language = null, string? SynthesisInfo = null);
+                                  string? Language = null, string? SynthesisInfo = null, string? SpokenText = null);
 
     /// <summary>Restores History from the last session. Runs on the UI thread at startup.</summary>
     private void LoadHistory()
@@ -113,7 +113,8 @@ public class SpeechEngine : ObservableObject, IDisposable
         var dtos = SafeFile.ReadJson<List<HistoryItemDto>>(_paths.HistoryFile) ?? [];
         foreach (var dto in dtos.Take(_settings.HistoryLimit))
         {
-            History.Add(new QueueItem(dto.Text, dto.Sender)
+            // Items saved before the spoken text was kept only have the spoken text.
+            History.Add(new QueueItem(dto.Text, dto.Sender, dto.SpokenText)
             {
                 Id = dto.Id,
                 EnqueuedAt = dto.EnqueuedAt,
@@ -162,7 +163,7 @@ public class SpeechEngine : ObservableObject, IDisposable
         SafeFile.WriteJson(_paths.HistoryFile,
                            History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
                                                                   i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
-                                                                  i.Language, i.SynthesisInfo)).ToList(),
+                                                                  i.Language, i.SynthesisInfo, i.SpokenText)).ToList(),
                            indented: false);
 
     /// <summary>Drops the oldest History items beyond the limit, deleting their audio.</summary>
@@ -229,10 +230,14 @@ public class SpeechEngine : ObservableObject, IDisposable
         var settings = _senders.GetOrCreate(sender);
         if (settings.Muted) return;
 
-        var cleaned = TextFilter.Clean(text, settings.FilterCharacters, settings.ReplacementSnapshot);
-        if (string.IsNullOrWhiteSpace(cleaned)) return;
+        // Guards against absurd input only; long text is split into parts below.
+        if (text.Length > TextFilter.MaxLength) text = text[..TextFilter.MaxLength];
 
-        var parts = TextChunker.Split(cleaned, _settings.ChunkThreshold, _settings.ChunkTargetLength);
+        // Split first, then clean each part, so a part can show its own unchanged text.
+        var filter = settings.FilterCharacters;
+        var replacements = settings.ReplacementSnapshot;
+        var parts = TextChunker.SplitMessage(text, t => TextFilter.Clean(t, filter, replacements),
+                                             _settings.ChunkThreshold, _settings.ChunkTargetLength);
         if (parts.Count == 0) return;
         var groupId = Guid.NewGuid();
         var band = NextBand();
@@ -242,10 +247,10 @@ public class SpeechEngine : ObservableObject, IDisposable
         var items = new List<QueueItem>(parts.Count);
         for (var i = 0; i < parts.Count; i++)
         {
-            items.Add(new QueueItem(parts[i], sender)
+            items.Add(new QueueItem(parts[i].Shown, sender, parts[i].Spoken)
             {
                 // Detected per part, so a mixed message can switch voice part by part.
-                Language = LanguageDetector.Detect(parts[i], profiles)?.Name,
+                Language = LanguageDetector.Detect(parts[i].Spoken, profiles)?.Name,
                 PlayWhenDisabled = playWhenDisabled,
                 GroupId = groupId,
                 Band = band,
@@ -344,7 +349,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     public void Requeue(QueueItem source)
     {
-        var copy = new QueueItem(source.Text, source.Sender)
+        var copy = new QueueItem(source.Text, source.Sender, source.SpokenText)
         {
             PlayWhenDisabled = true,
             IsCopy = true,
@@ -487,8 +492,8 @@ public class SpeechEngine : ObservableObject, IDisposable
 
         var senderSettings = _senders.GetOrCreate(item.Sender);
         var spokenText = senderSettings.AnnounceSender && item.PartIndex == 1
-            ? $"{item.Sender}: {item.Text}"
-            : item.Text;
+            ? $"{item.Sender}: {item.SpokenText}"
+            : item.SpokenText;
 
         var (engine, voiceId) = VoiceFor(item, senderSettings);
         var speed = _settings.SpeedPercent;

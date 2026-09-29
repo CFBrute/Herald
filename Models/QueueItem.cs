@@ -16,7 +16,13 @@ public enum QueueItemStatus
 public class QueueItem : ObservableObject
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+
+    /// <summary>The text as it was sent, shown in the lists and copied by "Copy text".</summary>
     public string Text { get; }
+
+    /// <summary>What the voice gets: the text after the sender's filters and replacements.</summary>
+    public string SpokenText { get; }
+
     public string Sender { get; }
     public DateTime EnqueuedAt { get; init; } = DateTime.Now;
     public string? AudioFilePath { get; set; }
@@ -47,8 +53,16 @@ public class QueueItem : ObservableObject
     public string? SynthesisInfo
     {
         get => _synthesisInfo;
-        set => SetField(ref _synthesisInfo, value);
+        set
+        {
+            if (SetField(ref _synthesisInfo, value)) OnPropertyChanged(nameof(Details));
+        }
     }
+
+    /// <summary>The item's tooltip: how its audio was made and the text the voice got.</summary>
+    public string Details => SynthesisInfo is { } info
+        ? $"{info}\n\nSpoken text:\n{SpokenText}"
+        : $"Spoken text:\n{SpokenText}";
 
     /// <summary>
     /// 0 or 1, alternating per message, so the lists can shade whole messages (all their
@@ -80,9 +94,10 @@ public class QueueItem : ObservableObject
         set => SetField(ref _status, value);
     }
 
-    public QueueItem(string text, string sender)
+    public QueueItem(string text, string sender, string? spokenText = null)
     {
         Text = text;
+        SpokenText = spokenText ?? text;
         Sender = sender;
     }
 }

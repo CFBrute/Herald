@@ -84,6 +84,53 @@ public class TextChunkerTests
         Assert.Equal(text, string.Join(" ", parts));
     }
 
+    private static string Clean(string text) => TextFilter.Clean(text, "*", []);
+
+    [Fact]
+    public void Each_part_shows_its_own_unchanged_slice_of_the_message()
+    {
+        var text = "## Result\n" + string.Join(" ", Enumerable.Range(1, 30).Select(i => $"Sentence **{i}** is here."));
+
+        var parts = TextChunker.SplitMessage(text, Clean, 300, 250);
+
+        Assert.True(parts.Count > 1);
+        // The shown parts are the original, cut only between parts.
+        Assert.Equal(text, string.Join(" ", parts.Select(p => p.Shown)));
+        Assert.StartsWith("## Result\nSentence **1** is here.", parts[0].Shown);
+        Assert.StartsWith("Result. Sentence 1 is here.", parts[0].Spoken);
+        Assert.All(parts, p => Assert.DoesNotContain("*", p.Spoken));
+    }
+
+    [Fact]
+    public void A_code_block_is_shown_with_the_text_before_it_but_not_spoken()
+    {
+        var text = "Here is the fix:\n```csharp\nvar x = 1;\nvar y = 2;\n```\nThat is all.";
+
+        var parts = TextChunker.SplitMessage(text, Clean, 300, 250);
+
+        var part = Assert.Single(parts);
+        Assert.Equal(text, part.Shown);
+        Assert.Equal("Here is the fix: That is all.", part.Spoken);
+    }
+
+    [Fact]
+    public void A_message_with_nothing_to_say_gives_no_parts()
+    {
+        Assert.Empty(TextChunker.SplitMessage("```\ncode only\n```", Clean, 300, 250));
+    }
+
+    [Fact]
+    public void A_part_cut_inside_a_line_gets_no_added_pause()
+    {
+        var words = string.Join(" ", Enumerable.Range(1, 200).Select(i => $"word{i}"));
+
+        var parts = TextChunker.SplitMessage(words, Clean, 100, 100);
+
+        Assert.All(parts.SkipLast(1), p => Assert.False(p.Spoken.EndsWith('.'), p.Spoken));
+        Assert.EndsWith(".", parts[^1].Spoken);
+        Assert.Equal(words, string.Join(" ", parts.Select(p => p.Shown)));
+    }
+
     [Fact]
     public void A_stretch_without_any_punctuation_falls_back_to_words()
     {

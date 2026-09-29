@@ -84,7 +84,10 @@ public class SpeechEngineTests : IDisposable
 
         await _h.HistoryCount(1);
         var item = _h.History[0];
-        Assert.Equal("Hello there.", item.Text);
+        // Shown as it was sent; the voice gets the cleaned text, which the tooltip shows.
+        Assert.Equal("Hello **there**", item.Text);
+        Assert.Equal("Hello there.", item.SpokenText);
+        Assert.EndsWith("Spoken text:\nHello there.", item.Details);
         Assert.Equal("tester", item.Sender);
         Assert.Equal(QueueItemStatus.Done, item.Status);
         Assert.StartsWith("Engine: Windows voices", item.SynthesisInfo);
@@ -145,7 +148,7 @@ public class SpeechEngineTests : IDisposable
         Speech.EnqueueRequested("Read this anyway", "clipboard");
 
         await _h.HistoryCount(2);
-        Assert.Equal(["Off.", "Read this anyway."], _h.History.Reverse().Select(i => i.Text));
+        Assert.Equal(["Off.", "Read this anyway."], _h.History.Reverse().Select(i => i.SpokenText));
     }
 
     [Fact]
@@ -162,7 +165,7 @@ public class SpeechEngineTests : IDisposable
         _h.Player.FinishCurrent();
         await _h.HistoryCount(2);
         Assert.Equal([("First message.", QueueItemStatus.Skipped), ("Second message.", QueueItemStatus.Done)],
-                     _h.History.Reverse().Select(i => (i.Text, i.Status)));
+                     _h.History.Reverse().Select(i => (i.SpokenText, i.Status)));
     }
 
     [Fact]
@@ -178,11 +181,11 @@ public class SpeechEngineTests : IDisposable
 
         await Wait.Until(() => _h.Player.Played.Count == 2 && _h.Player.Current != null, "the other message playing");
         _h.Player.FinishCurrent();
-        await Wait.Until(() => _h.Queue.Length == 0 && _h.History.Any(i => i.Text == "Another message."), "all done");
-        var skipped = _h.History.Where(i => i.Text != "Another message.").ToArray();
+        await Wait.Until(() => _h.Queue.Length == 0 && _h.History.Any(i => i.SpokenText == "Another message."), "all done");
+        var skipped = _h.History.Where(i => i.SpokenText != "Another message.").ToArray();
         Assert.True(skipped.Length > 1);
         Assert.All(skipped, i => Assert.Equal(QueueItemStatus.Skipped, i.Status));
-        Assert.Equal(QueueItemStatus.Done, _h.History.Single(i => i.Text == "Another message.").Status);
+        Assert.Equal(QueueItemStatus.Done, _h.History.Single(i => i.SpokenText == "Another message.").Status);
     }
 
     [Fact]
@@ -230,8 +233,8 @@ public class SpeechEngineTests : IDisposable
 
         await Wait.Until(() => _h.Player.Played.Count == 12 && _h.Queue.Length == 0, "all 12 played");
         await _h.HistoryCount(10);
-        Assert.Equal("Message 12.", _h.History[0].Text);
-        Assert.Equal("Message 3.", _h.History[^1].Text);
+        Assert.Equal("Message 12.", _h.History[0].SpokenText);
+        Assert.Equal("Message 3.", _h.History[^1].SpokenText);
         Assert.Equal(10, _h.AudioFiles.Length);
     }
 
@@ -270,8 +273,8 @@ public class SpeechEngineTests : IDisposable
 
         _h.Restart();
 
-        Assert.Equal(before.Select(i => (i.Id, i.Text, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)),
-                     _h.History.Select(i => (i.Id, i.Text, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)));
+        Assert.Equal(before.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)),
+                     _h.History.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo)));
         // Neighbouring messages get opposite shading.
         Assert.NotEqual(_h.History[0].Band, _h.History[1].Band);
     }
@@ -297,7 +300,7 @@ public class SpeechEngineTests : IDisposable
 
         await _h.HistoryCount(1);
         Assert.Equal(170, _h.Settings.SpeedPercent);
-        Assert.Equal("Speed 170.", _h.History[0].Text);
+        Assert.Equal("Speed 170.", _h.History[0].SpokenText);
         Assert.EndsWith("Speed: 170%", _h.History[0].SynthesisInfo);
     }
 
@@ -309,7 +312,7 @@ public class SpeechEngineTests : IDisposable
 
         await _h.HistoryCount(2);
         Assert.True(Speech.Enabled);
-        Assert.Equal(["Off.", "Activated."], _h.History.Reverse().Select(i => i.Text));
+        Assert.Equal(["Off.", "Activated."], _h.History.Reverse().Select(i => i.SpokenText));
     }
 
     [Fact]
