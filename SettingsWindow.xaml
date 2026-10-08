@@ -104,7 +104,14 @@
                     <CheckBox Content="Play a chime when a message arrives" Margin="0,20,0,4"
                               IsChecked="{Binding ChimeOnMessage}"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
-                               Text="A short ding-dong for each message from Claude Code or another program, also while speech is off, so you notice it arrived. Not for muted senders; several messages at once ring only once."/>
+                               Text="A short dong for each message from Claude Code or another program, also while speech is off, so you notice it arrived. Once per reply (Claude sends a reply in blocks), and at most once every 15 seconds. Not for muted senders. Also on the main window."/>
+                    <StackPanel Orientation="Horizontal" Margin="20,8,0,0">
+                        <TextBlock Text="Chime volume" VerticalAlignment="Center" Width="170"/>
+                        <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Width="220"
+                                Value="{Binding ChimeVolume}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding ChimeVolume, StringFormat={}{0}%}" VerticalAlignment="Center" Width="45" Margin="10,0,0,0"/>
+                        <Button Content="Test" Padding="10,2" Click="TestChime_Click"/>
+                    </StackPanel>
 
                     <CheckBox Content="Read text that is copied to the clipboard" Margin="0,20,0,4"
                               IsChecked="{Binding ReadClipboardAutomatically}"/>

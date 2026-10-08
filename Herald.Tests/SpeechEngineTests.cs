@@ -149,11 +149,13 @@ public class SpeechEngineTests : IDisposable
     public async Task A_message_from_another_program_rings_the_chime_even_while_speech_is_off()
     {
         Speech.Enabled = false;
+        _h.Settings.ChimeVolume = 40;
 
-        Speech.EnqueueText("Arrived while off", "tester", ring: true);
+        Speech.EnqueueText("Arrived while off", "tester", incoming: true);
 
         await Wait.Until(() => _h.ChimePlayer.Played.Count == 1, "the chime to ring");
         Assert.True(File.Exists(_h.ChimePlayer.Played.Single()));
+        Assert.Equal(0.4f, _h.ChimePlayer.Volume);
         await _h.HistoryCount(1);
         Assert.Empty(_h.Player.Played);
     }
@@ -162,10 +164,10 @@ public class SpeechEngineTests : IDisposable
     public async Task The_chime_stays_quiet_when_switched_off_for_muted_senders_and_typed_text()
     {
         _h.Senders.GetOrCreate("noisy").Muted = true;
-        Speech.EnqueueText("Muted", "noisy", ring: true);
+        Speech.EnqueueText("Muted", "noisy", incoming: true);
         Speech.EnqueueText("Typed in Herald", "herald");
         _h.Settings.ChimeOnMessage = false;
-        Speech.EnqueueText("Switched off", "tester", ring: true);
+        Speech.EnqueueText("Switched off", "tester", incoming: true);
 
         await _h.HistoryCount(3);
         await Task.Delay(200, TestContext.Current.CancellationToken);
@@ -177,11 +179,50 @@ public class SpeechEngineTests : IDisposable
     {
         Speech.Enabled = false;
 
-        for (var i = 1; i <= 3; i++) Speech.EnqueueText($"Message {i}", "tester", ring: true);
+        for (var i = 1; i <= 3; i++) Speech.EnqueueText($"Message {i}", "tester", incoming: true);
 
         await _h.HistoryCount(3);
         await Task.Delay(200, TestContext.Current.CancellationToken);
         Assert.Single(_h.ChimePlayer.Played);
+    }
+
+    [Fact]
+    public async Task Blocks_of_one_reply_are_one_message_and_a_split_code_block_is_joined_and_not_spoken()
+    {
+        Speech.Enabled = false;
+
+        // The way Claude Code's hook sends a reply: block by block, a code block in pieces.
+        Speech.EnqueueText("Pass the dispatcher in:", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("```csharp", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("var timer = new DispatcherTimer()\n{", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("};\n```", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("Then it ticks.", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("Another session", "claude", "C:\\Other", "s-2", incoming: true);
+
+        await _h.HistoryCount(3);
+        var history = _h.History.Reverse().ToArray();
+        Assert.Equal("Pass the dispatcher in:", history[0].Text);
+        Assert.Equal("```csharp\nvar timer = new DispatcherTimer()\n{\n};\n```\nThen it ticks.", history[1].Text);
+        Assert.Equal("Then it ticks.", history[1].SpokenText);
+        Assert.Equal(history[0].GroupId, history[1].GroupId);
+        Assert.Equal(history[0].Band, history[1].Band);
+        Assert.NotEqual(history[0].GroupId, history[2].GroupId);
+    }
+
+    [Fact]
+    public async Task A_code_block_ending_a_reply_is_kept_once_the_reply_goes_quiet()
+    {
+        Speech.Enabled = false;
+        Speech.ReplyGap = TimeSpan.FromMilliseconds(200);
+
+        Speech.EnqueueText("Here it is:", "claude", incoming: true);
+        Speech.EnqueueText("```\ncode\n```", "claude", incoming: true);
+
+        await _h.HistoryCount(2);
+        var last = _h.History[0];
+        Assert.Equal("```\ncode\n```", last.Text);
+        Assert.Equal("", last.SpokenText);
+        Assert.Equal(_h.History[1].GroupId, last.GroupId);
     }
 
     [Fact]

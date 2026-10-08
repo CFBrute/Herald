@@ -4,12 +4,13 @@ using NAudio.Wave;
 namespace Herald.Services;
 
 /// <summary>
-/// A short "ding-dong" played when a message arrives, so it's noticed even while speech
-/// is off. Follows Herald's volume; several messages arriving at once ring only once.
+/// A short "dong" played when a message arrives, so it's noticed even while speech
+/// is off. Has its own volume, and rings at most once every 15 seconds.
 /// </summary>
 public class Chime : IDisposable
 {
-    private static readonly TimeSpan MinGap = TimeSpan.FromSeconds(1.5);
+    // However many messages or replies arrive, it rings at most this often.
+    private static readonly TimeSpan MinGap = TimeSpan.FromSeconds(15);
 
     private readonly AppSettings _settings;
     private readonly IAudioPlayer _player;
@@ -36,6 +37,12 @@ public class Chime : IDisposable
             _lastRing = now;
         }
 
+        Play();
+    }
+
+    /// <summary>Plays the sound now, even if switched off - the Settings page's Test button.</summary>
+    public void Play()
+    {
         _ = Task.Run(() =>
         {
             try
@@ -44,7 +51,7 @@ public class Chime : IDisposable
                 {
                     if (!File.Exists(_path)) WriteSound(_path);
                 }
-                _player.Volume = _settings.Volume / 100f;
+                _player.Volume = _settings.ChimeVolume / 100f;
                 _player.Play(_path);
             }
             catch
@@ -54,13 +61,12 @@ public class Chime : IDisposable
         });
     }
 
-    /// <summary>Two decaying bell-like tones, high then low, about a second in all.</summary>
+    /// <summary>One low, decaying bell-like tone, about 0.6 seconds.</summary>
     private static void WriteSound(string path)
     {
         const int rate = 44100;
-        var samples = new float[(int)(rate * 1.1)];
-        AddTone(samples, rate, 659.25, start: 0.0, length: 0.6);  // E5
-        AddTone(samples, rate, 523.25, start: 0.28, length: 0.8); // C5
+        var samples = new float[(int)(rate * 0.6)];
+        AddTone(samples, rate, 392.00, start: 0.0, length: 0.6); // G4
 
         using var writer = new WaveFileWriter(path, WaveFormat.CreateIeeeFloatWaveFormat(rate, 1));
         writer.WriteSamples(samples, 0, samples.Length);
@@ -73,12 +79,12 @@ public class Chime : IDisposable
         for (var i = 0; i < count; i++)
         {
             var t = (double)i / rate;
-            var attack = Math.Min(1.0, t / 0.005);           // no click at the start
-            var decay = Math.Exp(-t * 5.0);
+            var attack = Math.Min(1.0, t / 0.01);            // no click at the start
+            var decay = Math.Exp(-t * 6.5);
             var fade = Math.Min(1.0, (count - i) / (rate * 0.02)); // nor at the end
             var tone = Math.Sin(2 * Math.PI * frequency * t)
-                     + 0.3 * Math.Sin(2 * Math.PI * frequency * 2 * t) * Math.Exp(-t * 4.0);
-            samples[first + i] += (float)(0.3 * tone * attack * decay * fade);
+                     + 0.12 * Math.Sin(2 * Math.PI * frequency * 2 * t) * Math.Exp(-t * 8.0); // a soft overtone keeps it dark
+            samples[first + i] += (float)(0.38 * tone * attack * decay * fade);
         }
     }
 

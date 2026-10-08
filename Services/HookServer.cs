@@ -245,7 +245,7 @@ public class HookServer
                 case "speak":
                     if (!String.IsNullOrWhiteSpace(command.Text))
                     {
-                        _engine.EnqueueText(command.Text, sender, command.Session, command.SessionId, ring: true);
+                        _engine.EnqueueText(command.Text, sender, command.Session, command.SessionId, incoming: true);
                     }
                     break;
 

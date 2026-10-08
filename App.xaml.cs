@@ -46,10 +46,11 @@ public partial class App : Application
         var engines = new EngineRegistry(paths.EnginesDir, log);
         var senders = new SenderSettingsStore(paths.SenderSettingsFile);
         var languages = new LanguageProfileStore(paths.LanguageProfilesFile);
-        var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log, chime: new Chime(settings));
+        var chime = new Chime(settings);
+        var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log, chime: chime);
         var hookServer = new HookServer(speech, settings, log: log, endpointFile: paths.EndpointFile);
         _services = new AppServices(log, paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
-                                    speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
+                                    speech, chime, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));
 
         // Loading the Kokoro model takes a few seconds; start now so the first message doesn't wait.
         engines.Kokoro.WarmUp();

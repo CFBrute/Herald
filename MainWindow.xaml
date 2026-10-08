@@ -157,6 +157,9 @@
                 <Button x:Name="SkipMessageButton" Content="Skip message" MinWidth="120" Height="32" Margin="6,0,0,0"
                         ToolTip="Skip the rest of the current message"
                         Click="SkipMessageButton_Click"/>
+                <CheckBox x:Name="ChimeBox" Content="Chime" Margin="16,0,0,0" VerticalAlignment="Center"
+                          IsChecked="{Binding ChimeOnMessage}"
+                          ToolTip="Play a short dong when a message arrives, also while speech is off (volume in Settings)"/>
             </StackPanel>
             <Button x:Name="SettingsButton" Content="Settings" MinWidth="80" Height="32" HorizontalAlignment="Right"
                     Click="SettingsButton_Click"/>

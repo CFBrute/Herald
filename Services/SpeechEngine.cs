@@ -26,6 +26,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     private readonly Lock _lock = new();
     private readonly SemaphoreSlim _signal = new(0);
     private readonly CancellationTokenSource _shutdownCts = new();
+    private readonly Timer _replyTimer;
 
     private volatile QueueItem? _currentItem;
     private volatile bool _skipRequested;
@@ -72,6 +73,8 @@ public class SpeechEngine : ObservableObject, IDisposable
             Name = "SpeechEngineWorker"
         };
         worker.Start();
+
+        _replyTimer = new Timer(_ => EndQuietReplies(), null, 1000, 1000);
     }
 
     private void OnSettingChanged(object? sender, PropertyChangedEventArgs e)
@@ -274,9 +277,103 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     /// <param name="session">Which of the sender's sessions it's from, shown as a badge; optional.</param>
     /// <param name="sessionId">That session's unique ID; optional.</param>
-    /// <param name="ring">Ring the chime (if it's on), for messages from other programs; not for a muted sender.</param>
-    public void EnqueueText(string text, string sender, string? session = null, string? sessionId = null, bool ring = false) =>
-        EnqueueInternal(text, sender, playWhenDisabled: false, session: Trimmed(session), sessionId: Trimmed(sessionId), ring: ring);
+    /// <param name="incoming">
+    /// From another program: rings the chime (if it's on, and not for a muted sender) and is
+    /// treated as a possible block of a longer reply - see <see cref="ReplyGap"/>.
+    /// </param>
+    public void EnqueueText(string text, string sender, string? session = null, string? sessionId = null, bool incoming = false)
+    {
+        session = Trimmed(session);
+        sessionId = Trimmed(sessionId);
+        if (!incoming)
+        {
+            EnqueueInternal(text, sender, playWhenDisabled: false, session: session, sessionId: sessionId);
+            return;
+        }
+        if (String.IsNullOrWhiteSpace(text)) return;
+
+        string? complete;
+        Reply reply;
+        bool startsReply;
+        lock (_replies)
+        {
+            var key = $"{sender}\n{sessionId ?? session}";
+            var now = DateTime.UtcNow;
+            startsReply = !_replies.TryGetValue(key, out var existing) || now - existing.Last > ReplyGap;
+            reply = startsReply ? new Reply(sender, session, sessionId, Guid.NewGuid(), NextBand()) : existing!;
+            _replies[key] = reply;
+            reply.Last = now;
+            complete = reply.Add(text);
+        }
+
+        if (startsReply && !_senders.GetOrCreate(sender).Muted) _chime?.Ring();
+        if (complete != null) EnqueueBlock(reply, complete);
+    }
+
+    /// <summary>
+    /// Claude Code sends a reply block by block (each paragraph, list item, even each piece of
+    /// a code block). Blocks from one session that arrive less than this apart are one message:
+    /// they share its shading and Skip message, and only the first rings the chime.
+    /// </summary>
+    public TimeSpan ReplyGap { get; set; } = TimeSpan.FromSeconds(5);
+
+    private readonly Dictionary<string, Reply> _replies = [];
+
+    /// <summary>A reply arriving block by block from one sender's session.</summary>
+    private sealed class Reply(string sender, string? session, string? sessionId, Guid groupId, int band)
+    {
+        public string Sender { get; } = sender;
+        public string? Session { get; } = session;
+        public string? SessionId { get; } = sessionId;
+        public Guid GroupId { get; } = groupId;
+        public int Band { get; } = band;
+        public DateTime Last { get; set; }
+
+        /// <summary>Held back: a code block that's still open, or a finished one with nothing to say yet.</summary>
+        public string? Held { get; set; }
+        private bool _codeOpen;
+
+        /// <summary>
+        /// The text to queue now, or null while it's held back: a code block is collected until
+        /// it closes (so it isn't spoken), then goes with the next block that has words in it.
+        /// </summary>
+        public string? Add(string text)
+        {
+            var combined = Held == null ? text : Held + "\n" + text;
+            var fences = text.Split('\n').Count(line => line.TrimStart().StartsWith("```", StringComparison.Ordinal));
+            if (fences % 2 == 1) _codeOpen = !_codeOpen;
+
+            if (_codeOpen || TextFilter.CodeBlock.Replace(combined, "").Trim().Length == 0)
+            {
+                Held = combined;
+                return null;
+            }
+
+            Held = null;
+            return combined;
+        }
+    }
+
+    private void EnqueueBlock(Reply reply, string text) =>
+        EnqueueInternal(text, reply.Sender, playWhenDisabled: false, session: reply.Session, sessionId: reply.SessionId,
+                        groupId: reply.GroupId, band: reply.Band);
+
+    /// <summary>Ends replies that went quiet, queueing whatever they still held back (e.g. a closing code block).</summary>
+    private void EndQuietReplies()
+    {
+        var ended = new List<Reply>();
+        lock (_replies)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var (key, reply) in _replies.Where(r => now - r.Value.Last > ReplyGap).ToList())
+            {
+                _replies.Remove(key);
+                ended.Add(reply);
+            }
+        }
+
+        foreach (var reply in ended.Where(r => r.Held != null)) EnqueueBlock(reply, reply.Held!);
+    }
 
     private static string? Trimmed(string? value) => String.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -294,12 +391,11 @@ public class SpeechEngine : ObservableObject, IDisposable
     public void EnqueueRequested(string text, string sender) => EnqueueInternal(text, sender, playWhenDisabled: true);
 
     private void EnqueueInternal(string text, string sender, bool playWhenDisabled, bool speedAnnouncement = false,
-                                 string? session = null, string? sessionId = null, bool ring = false)
+                                 string? session = null, string? sessionId = null, Guid? groupId = null, int? band = null)
     {
         if (String.IsNullOrWhiteSpace(text)) return;
 
         var settings = _senders.GetOrCreate(sender);
-        if (ring && !settings.Muted) _chime?.Ring();
         // Messages that won't be spoken still go into History (without audio), so they
         // can be read there and played later on request.
         QueueItemStatus? notSpoken = settings.Muted ? QueueItemStatus.Muted
@@ -314,9 +410,25 @@ public class SpeechEngine : ObservableObject, IDisposable
         var replacements = settings.ReplacementSnapshot;
         var parts = TextChunker.SplitMessage(text, t => TextFilter.Clean(t, filter, replacements),
                                              _settings.ChunkThreshold, _settings.ChunkTargetLength);
-        if (parts.Count == 0) return;
-        var groupId = Guid.NewGuid();
-        var band = NextBand();
+        if (parts.Count == 0)
+        {
+            // Nothing to say (a code block ending a reply): still shown, as part of its reply.
+            if (groupId is { } reply)
+            {
+                MoveToHistory(new QueueItem(text, sender, "")
+                {
+                    Status = QueueItemStatus.Done,
+                    ShowAsMarkdown = settings.ShowAsMarkdown,
+                    Session = session,
+                    SessionId = sessionId,
+                    GroupId = reply,
+                    Band = band ?? NextBand()
+                });
+            }
+            return;
+        }
+        var messageGroup = groupId ?? Guid.NewGuid();
+        var messageBand = band ?? NextBand();
         // Only look for the languages this sender has a voice rule for.
         var ruleLanguages = settings.LanguageRules.Select(r => r.LanguageName).ToHashSet();
         var profiles = _languages.Snapshot.Where(p => ruleLanguages.Contains(p.Name)).ToList();
@@ -332,8 +444,8 @@ public class SpeechEngine : ObservableObject, IDisposable
                 IsSpeedAnnouncement = speedAnnouncement,
                 Session = session,
                 SessionId = sessionId,
-                GroupId = groupId,
-                Band = band,
+                GroupId = messageGroup,
+                Band = messageBand,
                 PartIndex = i + 1,
                 PartCount = parts.Count
             });
@@ -451,6 +563,9 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     public void Requeue(QueueItem source)
     {
+        // A code block on its own has nothing to say.
+        if (String.IsNullOrWhiteSpace(source.SpokenText)) return;
+
         var copy = new QueueItem(source.Text, source.Sender, source.SpokenText)
         {
             PlayWhenDisabled = true,
@@ -832,6 +947,7 @@ public class SpeechEngine : ObservableObject, IDisposable
         _shutdownCts.Cancel();
         _signal.Release();
         _player.Stop();
+        _replyTimer.Dispose();
         _chime?.Dispose();
     }
 }

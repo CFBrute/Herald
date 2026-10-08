@@ -511,6 +511,8 @@ public partial class SettingsWindow : Window
 
     private void HowTo_Click(object sender, RoutedEventArgs e) => new HowToWindow(_services) { Owner = this }.Show();
 
+    private void TestChime_Click(object sender, RoutedEventArgs e) => _services.Chime.Play();
+
     private void Cleanup_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new CleanupWindow(_services, _exitHerald) { Owner = this };

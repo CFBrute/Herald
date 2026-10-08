@@ -123,6 +123,14 @@ public class AppSettings : ObservableObject
         set => Set(ref _chimeOnMessage, value);
     }
 
+    private int _chimeVolume = 40;
+    /// <summary>The chime's volume, 0-100%; separate from <see cref="Volume"/>, which is for speech.</summary>
+    public int ChimeVolume
+    {
+        get => _chimeVolume;
+        set => Set(ref _chimeVolume, Math.Clamp(value, 0, 100));
+    }
+
     public AppSettings(string filePath)
     {
         _filePath = filePath;
@@ -148,6 +156,7 @@ public class AppSettings : ObservableObject
         if (dto.UiScalePercent is { } scale) UiScalePercent = scale;
         if (dto.HookPort is { } port) HookPort = port;
         if (dto.ChimeOnMessage is { } chime) ChimeOnMessage = chime;
+        if (dto.ChimeVolume is { } chimeVolume) ChimeVolume = chimeVolume;
         _loading = false;
     }
 
@@ -157,13 +166,14 @@ public class AppSettings : ObservableObject
         SafeFile.WriteJson(_filePath, new SettingsDto(_speedPercent, _chunkThreshold, _chunkTargetLength, _historyLimit,
                                                       _askToConnectClaude, _readClipboardAutomatically, _trayHintShown,
                                                       _theme.ToString(), _volume, _uiScalePercent, _hookPort,
-                                                      _chimeOnMessage));
+                                                      _chimeOnMessage, _chimeVolume));
 
     // Property names are part of the file format; keep them when renaming properties.
     private record SettingsDto(int SpeedPercent, int ChunkThreshold = 0, int ChunkTargetLength = 0, int HistoryLimit = 0,
                                bool? AskToConnectClaude = null, bool? ReadClipboardAutomatically = null,
                                bool? TrayHintShown = null, string? Theme = null, int? Volume = null,
-                               int? UiScalePercent = null, int? HookPort = null, bool? ChimeOnMessage = null);
+                               int? UiScalePercent = null, int? HookPort = null, bool? ChimeOnMessage = null,
+                               int? ChimeVolume = null);
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string name = "")
     {
