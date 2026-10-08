@@ -46,7 +46,7 @@ public partial class App : Application
         var engines = new EngineRegistry(paths.EnginesDir, log);
         var senders = new SenderSettingsStore(paths.SenderSettingsFile);
         var languages = new LanguageProfileStore(paths.LanguageProfilesFile);
-        var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log);
+        var speech = new SpeechEngine(paths, settings, engines, senders, languages, log: log, chime: new Chime(settings));
         var hookServer = new HookServer(speech, settings, log: log, endpointFile: paths.EndpointFile);
         _services = new AppServices(log, paths, settings, engines, senders, languages, new HotkeySettingsStore(paths.HotkeysFile),
                                     speech, hookServer, new ClaudeCodeIntegration(paths.ClaudeHookScript));

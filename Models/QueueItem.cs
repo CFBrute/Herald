@@ -10,7 +10,11 @@ public enum QueueItemStatus
     Playing,
     Done,
     Skipped,
-    Failed
+    Failed,
+    /// <summary>Arrived while its sender was muted: kept in History, but never synthesized.</summary>
+    Muted,
+    /// <summary>Arrived while speech was turned off: kept in History, but never synthesized.</summary>
+    SpeechOff
 }
 
 public class QueueItem : ObservableObject
@@ -47,6 +51,32 @@ public class QueueItem : ObservableObject
 
     /// <summary>True for a copy put back in the queue with "Play again".</summary>
     public bool IsCopy { get; init; }
+
+    /// <summary>
+    /// Which session of the sender this came from (e.g. the project a Claude Code session
+    /// works in), or null. Shown as a badge; doesn't change which settings apply.
+    /// </summary>
+    public string? Session { get; init; }
+
+    /// <summary>The session's unique ID, or null.</summary>
+    public string? SessionId { get; init; }
+
+    /// <summary>
+    /// The session badge: the start of the session's ID (enough to tell sessions apart),
+    /// or the last part of its name (a folder path, for Claude Code) when it has no ID.
+    /// Null when the message has no session.
+    /// </summary>
+    public string? SessionLabel => SessionId is { } id ? id[..Math.Min(4, id.Length)] : LastPart(Session);
+
+    private static string? LastPart(string? name) =>
+        name?.TrimEnd('\\', '/').Split('\\', '/')[^1] is { Length: > 0 } last ? last : name;
+
+    /// <summary>The session badge's tooltip.</summary>
+    public string SessionDetails => String.Join("\n", new[]
+    {
+        Session is { } name ? $"Folder: {name}" : null,
+        SessionId is { } id ? $"Session: {id}" : null
+    }.OfType<string>());
 
     /// <summary>Name of the language profile detected for this part, or null.</summary>
     public string? Language { get; init; }

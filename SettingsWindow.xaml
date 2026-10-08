@@ -101,6 +101,11 @@
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
                                Text="Adds Herald to your user's startup list (no installer or admin rights needed). It also shows up, and can be switched off, under Windows Settings > Apps > Startup. If you move Herald.exe, start it once by hand and it updates the entry."/>
 
+                    <CheckBox Content="Play a chime when a message arrives" Margin="0,20,0,4"
+                              IsChecked="{Binding ChimeOnMessage}"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
+                               Text="A short ding-dong for each message from Claude Code or another program, also while speech is off, so you notice it arrived. Not for muted senders; several messages at once ring only once."/>
+
                     <CheckBox Content="Read text that is copied to the clipboard" Margin="0,20,0,4"
                               IsChecked="{Binding ReadClipboardAutomatically}"/>
                     <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}" Margin="20,0,0,0"
@@ -155,7 +160,18 @@
                     </DockPanel>
 
                     <StackPanel Grid.Row="3" Margin="0,14,0,0">
-                        <TextBlock FontWeight="Bold" Text="Default voice for the selected sender" Margin="0,0,0,6"/>
+                        <TextBlock FontWeight="Bold" Text="Voices for the selected sender" Margin="0,0,0,6"/>
+                        <ItemsControl x:Name="VoicesList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel Margin="0,0,0,4">
+                                        <Button DockPanel.Dock="Right" Content="Remove" MinWidth="60" Margin="6,0,0,0" Tag="{Binding}" Click="VoiceRemove_Click"/>
+                                        <Button DockPanel.Dock="Right" Content="Test" MinWidth="50" Margin="6,0,0,0" Tag="{Binding}" Click="VoiceTest_Click"/>
+                                        <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <!-- One full-width row per picker: engine and voice names get long
                              ("Swedish (Sweden) / Svenska - nst, medium"). -->
                         <Grid>
@@ -172,12 +188,15 @@
                             <ComboBox Grid.Row="0" Grid.Column="1" x:Name="EngineCombo" DisplayMemberPath="DisplayName"
                                       SelectionChanged="EngineCombo_SelectionChanged"/>
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Voice:" VerticalAlignment="Center" Margin="0,6,6,0"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="VoiceCombo" Margin="0,6,0,0"
-                                      SelectionChanged="VoiceCombo_SelectionChanged"/>
-                            <Button Grid.Row="1" Grid.Column="2" x:Name="TestVoiceButton" Content="Test" MinWidth="50" Margin="6,6,0,0"
-                                    Click="TestVoiceButton_Click"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="VoiceCombo" Margin="0,6,0,0"/>
+                            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
+                                <Button x:Name="TestVoiceButton" Content="Test" MinWidth="50" Margin="6,6,0,0" Click="TestVoiceButton_Click"/>
+                                <Button Content="Add" MinWidth="50" Margin="6,6,0,0" Click="VoiceAdd_Click"/>
+                            </StackPanel>
                         </Grid>
                         <TextBlock x:Name="EngineHintText" Foreground="{DynamicResource WarningText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock Foreground="{DynamicResource SubtleText}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Text="With one voice, everything this sender sends uses it. With several, each session (like each Claude Code window) gets its own: the first voice no other session has, or from the top again when all are taken. Messages without a session count as one session. A session keeps its voice until it's removed here."/>
 
                         <TextBlock FontWeight="Bold" Text="When a language is detected, use another voice" Margin="0,12,0,4"/>
                         <ItemsControl x:Name="LanguageRulesList">
@@ -213,7 +232,7 @@
                             <Button Grid.Row="1" Grid.Column="4" x:Name="RuleAddButton" Content="Add" MinWidth="50" Margin="6,6,0,0" Click="LanguageRuleAdd_Click"/>
                         </Grid>
                         <TextBlock x:Name="LanguageRuleHint" Foreground="{DynamicResource SubtleText}" TextWrapping="Wrap" Margin="0,4,0,0"
-                                   Text="Languages and how they're detected are set up on the Languages tab."/>
+                                   Text="Languages and how they're detected are set up on the Languages tab. Give a language several voices and sessions take turns with them, like with the voices above."/>
                     </StackPanel>
 
                     <TextBlock Grid.Row="4" Margin="0,14,0,6" TextWrapping="Wrap">

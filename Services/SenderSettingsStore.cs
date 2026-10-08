@@ -89,6 +89,8 @@ public class SenderSettingsStore
                 AnnounceSender = dto.AnnounceSender,
                 LanguageRules = dto.LanguageRules?.Select(r => new LanguageVoiceRule(r.LanguageName, r.EngineId, r.VoiceId)).ToList() ?? []
             };
+            // Saved before senders could have several voices: the one voice above.
+            if (dto.Voices != null) settings.Voices = [.. dto.Voices.Select(v => new SenderVoice(v.EngineId, v.VoiceId))];
             // Saved before the option existed: keep the default (on for claude only).
             if (dto.ShowAsMarkdown is { } markdown) settings.ShowAsMarkdown = markdown;
             yield return settings;
@@ -100,21 +102,30 @@ public class SenderSettingsStore
         List<SenderSettings> senders;
         lock (_lock) senders = [.. _byName.Values];
 
-        SafeFile.WriteJson(_filePath, senders.Select(s => new SenderSettingsDto(
-            s.Sender, s.Muted, s.FilterCharacters, s.AnnounceSender,
-            [.. s.ReplacementSnapshot.Select(r => new ReplacementDto(r.Find, r.Replace))],
-            s.EngineId, s.VoiceId,
-            [.. s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId))],
-            s.ShowAsMarkdown)).ToList());
+        SafeFile.WriteJson(_filePath, senders.Select(s =>
+        {
+            // The first voice is also saved on its own, as before, so an older Herald still finds it.
+            var first = s.Voices.FirstOrDefault() ?? new SenderVoice(SenderSettings.DefaultEngineId, String.Empty);
+            return new SenderSettingsDto(
+                s.Sender, s.Muted, s.FilterCharacters, s.AnnounceSender,
+                [.. s.ReplacementSnapshot.Select(r => new ReplacementDto(r.Find, r.Replace))],
+                first.EngineId, first.VoiceId,
+                [.. s.LanguageRules.Select(r => new LanguageRuleDto(r.LanguageName, r.EngineId, r.VoiceId))],
+                s.ShowAsMarkdown,
+                [.. s.Voices.Select(v => new VoiceDto(v.EngineId, v.VoiceId))]);
+        }).ToList());
     }
 
     private record SenderSettingsDto(string Sender, bool Muted, string FilterCharacters, bool AnnounceSender = false,
                                      List<ReplacementDto>? Replacements = null,
                                      string? EngineId = null, string? VoiceId = null,
                                      List<LanguageRuleDto>? LanguageRules = null,
-                                     bool? ShowAsMarkdown = null);
+                                     bool? ShowAsMarkdown = null,
+                                     List<VoiceDto>? Voices = null);
 
     private record LanguageRuleDto(string LanguageName, string EngineId, string VoiceId);
+
+    private record VoiceDto(string EngineId, string VoiceId);
 
     private record ReplacementDto(string Find, string Replace);
 }

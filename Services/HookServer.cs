@@ -20,6 +20,15 @@ file class Command
     /// claim any tag. Defaults to "unknown" when omitted.
     /// </summary>
     public string? Sender { get; set; }
+
+    /// <summary>
+    /// Optional name of the session a message comes from (e.g. the project a Claude Code
+    /// session works in), so several sessions under one sender can be told apart.
+    /// </summary>
+    public string? Session { get; set; }
+
+    /// <summary>Optional unique ID of that session; shown in the session badge's tooltip.</summary>
+    public string? SessionId { get; set; }
 }
 
 /// <summary>
@@ -236,7 +245,7 @@ public class HookServer
                 case "speak":
                     if (!String.IsNullOrWhiteSpace(command.Text))
                     {
-                        _engine.EnqueueText(command.Text, sender);
+                        _engine.EnqueueText(command.Text, sender, command.Session, command.SessionId, ring: true);
                     }
                     break;
 

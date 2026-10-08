@@ -44,20 +44,17 @@ public class SenderSettings : ObservableObject
         set => SetField(ref _showAsMarkdown, value);
     }
 
-    private string _engineId;
-    /// <summary>Which speech engine speaks this sender's messages, e.g. "windows" or "kokoro".</summary>
-    public string EngineId
+    private IReadOnlyList<SenderVoice> _voices;
+    /// <summary>
+    /// The voices this sender speaks with. With one, everything uses it; with several,
+    /// sessions take turns with them (e.g. two Claude Code sessions sound different), and
+    /// messages without a session count as one more session. Empty means Windows' default
+    /// voice. Replaced as a whole (immutable), so the speech threads can read it without locking.
+    /// </summary>
+    public IReadOnlyList<SenderVoice> Voices
     {
-        get => _engineId;
-        set => SetField(ref _engineId, value ?? DefaultEngineId);
-    }
-
-    private string _voiceId;
-    /// <summary>Voice within the engine. Empty means the engine's default voice.</summary>
-    public string VoiceId
-    {
-        get => _voiceId;
-        set => SetField(ref _voiceId, value ?? String.Empty);
+        get => _voices;
+        set => SetField(ref _voices, value ?? []);
     }
 
     public const string DefaultEngineId = "windows";
@@ -65,8 +62,9 @@ public class SenderSettings : ObservableObject
     private IReadOnlyList<LanguageVoiceRule> _languageRules = [];
     /// <summary>
     /// "If this language is detected, use this voice" rules. Empty means this sender
-    /// always uses its default voice. Replaced as a whole (immutable), so the speech
-    /// threads can read it without locking.
+    /// always uses its own voices. A language can have several rules; sessions then
+    /// take turns with them like with <see cref="Voices"/>. Replaced as a whole
+    /// (immutable), so the speech threads can read it without locking.
     /// </summary>
     public IReadOnlyList<LanguageVoiceRule> LanguageRules
     {
@@ -122,8 +120,7 @@ public class SenderSettings : ObservableObject
         _muted = muted;
         _showAsMarkdown = DefaultShowAsMarkdown(sender);
         _filterCharacters = filterCharacters ?? DefaultFilterCharacters;
-        _engineId = engineId ?? DefaultEngineId;
-        _voiceId = voiceId ?? String.Empty;
+        _voices = [new SenderVoice(engineId ?? DefaultEngineId, voiceId ?? String.Empty)];
 
         foreach (var rule in replacements ?? DefaultReplacements())
         {

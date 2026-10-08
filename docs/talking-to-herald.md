@@ -50,7 +50,7 @@ A line that isn't JSON gets `{"status":"error"}`, and the reason goes to Herald'
 
 | `type` | Other fields | What it does |
 |---|---|---|
-| `speak` | `text`, `sender` (optional) | Adds the text to Herald's queue. It's spoken after what's already queued; it doesn't interrupt. |
+| `speak` | `text`, `sender`, `session`, `sessionId` (all but `text` optional) | Adds the text to Herald's queue. It's spoken after what's already queued; it doesn't interrupt. |
 | `toggle` | | Turns speech on or off, and says which. |
 | `skip` | | Skips the part being spoken; the next part follows. |
 | `skipmessage` | | Skips the rest of the message being spoken. |
@@ -61,7 +61,7 @@ An unknown `type` is ignored and noted in Herald's log.
 
 ### What happens to spoken text
 
-- **Speech is off:** a `speak` is dropped, not saved for later. The reply's `enabled` shows this.
+- **Speech is off, or the sender is muted:** a `speak` isn't spoken, but it's kept in History (as `SpeechOff` or `Muted`) and can be played from there. The reply's `enabled` shows whether speech is on.
 - **Long text** is split into parts at line breaks and sentence ends, so speaking starts quickly. Parts of one message can be skipped together with `skipmessage`.
 - **Markdown** (`**bold**`, `` `code` ``, headings, links) is cleaned up before speaking. Code blocks aren't spoken at all.
 - **Very long text** is cut off at 20,000 characters.
@@ -70,13 +70,21 @@ An unknown `type` is ignored and noted in Herald's log.
 
 `sender` is a name you choose, like `my-script` or `build`. It's `unknown` if you leave it out. Each sender gets its own settings under **Settings > Senders**, created the first time it sends something:
 
-- a voice, and other voices for other languages
+- one or more voices, and other voices for other languages
 - mute
 - characters to leave out and words to replace
 - whether its messages are shown formatted as Markdown
 - whether its name is spoken first
 
 The name isn't checked: anything on this PC can send as any sender. Use your own name rather than `claude` or `herald`, so your messages keep their own settings.
+
+### Sessions
+
+When several copies of one program send as the same sender, `sessionId` tells them apart: a unique ID per copy. Its first four characters are shown as a badge next to the sender in Queue and History. `session` is an optional name, such as a folder, shown when you hover over the badge (and as the badge if there's no `sessionId`).
+
+Claude Code's hook sends the full path of the folder Claude works in as `session`, and Claude's session ID as `sessionId`. Without a `sessionId`, the badge shows the last folder of `session`.
+
+A sender with several voices (under **Settings > Senders**) gives each session its own: a new session takes the first voice no other session has, and when every voice is taken they're handed out again from the top. Messages without a `sessionId` count as one session. A session keeps its voice until that voice is removed from the list; then it picks again the next time it speaks. A language can have several voices too, shared out the same way, and a message in that language uses those instead. Who has which voice is forgotten when Herald restarts.
 
 ## Examples
 
@@ -178,5 +186,5 @@ Console.WriteLine(await new StreamReader(stream).ReadLineAsync());
 
 - **Nothing answers:** Herald isn't running, or it couldn't open its port. Its main window then says why at the bottom, for example that another program uses the port.
 - **The reply says `"enabled":false`:** speech is off. Turn it on with the button in Herald, Alt+Shift+S, or `toggle`.
-- **Nothing is heard but the reply is fine:** check whether the sender is muted under Settings > Senders.
+- **Nothing is heard but the reply is fine:** look at the reply in History: `Muted` means the sender is muted under Settings > Senders, `SpeechOff` means speech was turned off when it arrived. Double-click it to hear it anyway.
 - **Herald's log** (`%LOCALAPPDATA%\Herald\herald.log`, also on the Files tab in Settings) notes messages it couldn't read, unknown commands, and voices that failed.
