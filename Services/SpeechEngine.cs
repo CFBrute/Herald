@@ -58,6 +58,7 @@ public class SpeechEngine : ObservableObject, IDisposable
         _player = player ?? new AudioPlayer();
 
         _player.Volume = _settings.Volume / 100f;
+        _player.Padding = _settings.SilencePadding;
         _settings.PropertyChanged += OnSettingChanged;
 
         LoadHistory();
@@ -77,6 +78,9 @@ public class SpeechEngine : ObservableObject, IDisposable
         {
             case nameof(AppSettings.Volume):
                 _player.Volume = _settings.Volume / 100f;
+                break;
+            case nameof(AppSettings.SilencePadding):
+                _player.Padding = _settings.SilencePadding;
                 break;
             case nameof(AppSettings.HistoryLimit):
                 RunOnUi(() =>

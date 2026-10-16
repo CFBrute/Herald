@@ -48,6 +48,7 @@ public partial class SettingsWindow : Window
         // General
         GeneralTab.DataContext = _settings;
         ThemeCombo.SelectedItem = ThemeCombo.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == _settings.Theme.ToString());
+        PaddingCombo.SelectedItem = PaddingCombo.Items.Cast<ComboBoxItem>().First(i => (string)i.Tag == _settings.SilencePadding.ToString());
         StartWithWindowsBox.IsChecked = StartupRegistration.IsEnabled;
 
         // Senders (the window's own DataContext) and their language rules
@@ -421,6 +422,13 @@ public partial class SettingsWindow : Window
         if (choice == _settings.Theme) return;
         _settings.Theme = choice;
         ThemeManager.Apply(choice);
+    }
+
+    private void PaddingCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PaddingCombo.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+
+        _settings.SilencePadding = Enum.Parse<SilencePaddingMode>(tag);
     }
 
     // Checked/Unchecked (not Click) so keyboard and accessibility tools change the setting too.

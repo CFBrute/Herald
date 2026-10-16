@@ -63,6 +63,17 @@
                                    VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource SubtleText}"/>
                     </Grid>
 
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="Silence padding" VerticalAlignment="Center" Width="190"/>
+                        <ComboBox x:Name="PaddingCombo" Width="220" SelectionChanged="PaddingCombo_SelectionChanged">
+                            <ComboBoxItem Content="Auto (pad only on Bluetooth)" Tag="Auto"/>
+                            <ComboBoxItem Content="Always on" Tag="On"/>
+                            <ComboBoxItem Content="Off" Tag="Off"/>
+                        </ComboBox>
+                        <TextBlock Text="Bluetooth speakers/headsets can clip the start or end of a clip; this pads a bit of silence around it"
+                                   VerticalAlignment="Center" TextWrapping="Wrap" Margin="10,0,0,0" Foreground="{DynamicResource SubtleText}"/>
+                    </StackPanel>
+
                     <TextBlock Margin="0,0,0,12" TextWrapping="Wrap"
                                Text="Long messages are split into parts at new lines, sentence ends, ';' and ':' (commas only in a very long stretch without any of those). The first part is kept short so speech starts quickly, and the next part is prepared while the current one plays."/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">

@@ -36,6 +36,7 @@ public sealed class FakePlayer : IAudioPlayer
     private volatile ManualResetEventSlim? _stop;
 
     public float Volume { get; set; } = 1f;
+    public SilencePaddingMode Padding { get; set; }
     public bool HoldPlayback { get; set; }
     public ConcurrentQueue<string> Played { get; } = new();
 
