@@ -101,6 +101,9 @@ public class KokoroEngine : ObservableObject, ITtsEngine, IDisposable
         Directory.CreateDirectory(partial);
         File.Copy(Path.Combine(from, "espeak-ng.dll"), Path.Combine(partial, "espeak-ng.dll"));
         CopyFolder(Path.Combine(from, "espeak-ng-data"), Path.Combine(partial, "espeak-ng-data"));
+        // Only called when IsInstalledIn(to) is already false, so anything left there is a
+        // leftover from a previous failed attempt and safe to clear before the move.
+        if (Directory.Exists(to)) Directory.Delete(to, recursive: true);
         Directory.Move(partial, to);
     }
 
