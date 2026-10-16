@@ -32,7 +32,10 @@ public sealed class SpeechHarness : IDisposable
         Speech = Start();
     }
 
-    private SpeechEngine Start() => new(Paths, Settings, Engines, Senders, Languages, Player);
+    /// <summary>"Plays" the chime, separately from the speech.</summary>
+    public FakePlayer ChimePlayer { get; } = new();
+
+    private SpeechEngine Start() => new(Paths, Settings, Engines, Senders, Languages, Player, chime: new Chime(Settings, ChimePlayer));
 
     /// <summary>Stops this queue and starts a new one on the same files, like restarting Herald.</summary>
     public SpeechEngine Restart()
@@ -127,15 +130,99 @@ public class SpeechEngineTests : IDisposable
     }
 
     [Fact]
-    public async Task A_muted_sender_is_ignored()
+    public async Task A_muted_senders_message_is_kept_in_history_but_not_spoken()
     {
         _h.Senders.GetOrCreate("noisy").Muted = true;
 
         Speech.EnqueueText("You should not hear this", "noisy");
         Speech.EnqueueText("But this one", "tester");
 
+        await _h.HistoryCount(2);
+        Assert.Equal([("noisy", QueueItemStatus.Muted), ("tester", QueueItemStatus.Done)],
+                     _h.History.Reverse().Select(i => (i.Sender, i.Status)));
+        Assert.Null(_h.History.Single(i => i.Sender == "noisy").AudioFilePath);
+        Assert.Single(_h.Player.Played);
+        Assert.Single(_h.AudioFiles);
+    }
+
+    [Fact]
+    public async Task A_message_from_another_program_rings_the_chime_even_while_speech_is_off()
+    {
+        Speech.Enabled = false;
+        _h.Settings.ChimeVolume = 40;
+
+        Speech.EnqueueText("Arrived while off", "tester", incoming: true);
+
+        await Wait.Until(() => _h.ChimePlayer.Played.Count == 1, "the chime to ring");
+        Assert.True(File.Exists(_h.ChimePlayer.Played.Single()));
+        Assert.Equal(0.4f, _h.ChimePlayer.Volume);
         await _h.HistoryCount(1);
-        Assert.Equal("tester", _h.History[0].Sender);
+        Assert.Empty(_h.Player.Played);
+    }
+
+    [Fact]
+    public async Task The_chime_stays_quiet_when_switched_off_for_muted_senders_and_typed_text()
+    {
+        _h.Senders.GetOrCreate("noisy").Muted = true;
+        Speech.EnqueueText("Muted", "noisy", incoming: true);
+        Speech.EnqueueText("Typed in Herald", "herald");
+        _h.Settings.ChimeOnMessage = false;
+        Speech.EnqueueText("Switched off", "tester", incoming: true);
+
+        await _h.HistoryCount(3);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.Empty(_h.ChimePlayer.Played);
+    }
+
+    [Fact]
+    public async Task Several_messages_at_once_ring_only_once()
+    {
+        Speech.Enabled = false;
+
+        for (var i = 1; i <= 3; i++) Speech.EnqueueText($"Message {i}", "tester", incoming: true);
+
+        await _h.HistoryCount(3);
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.Single(_h.ChimePlayer.Played);
+    }
+
+    [Fact]
+    public async Task Blocks_of_one_reply_are_one_message_and_a_split_code_block_is_joined_and_not_spoken()
+    {
+        Speech.Enabled = false;
+
+        // The way Claude Code's hook sends a reply: block by block, a code block in pieces.
+        Speech.EnqueueText("Pass the dispatcher in:", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("```csharp", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("var timer = new DispatcherTimer()\n{", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("};\n```", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("Then it ticks.", "claude", "C:\\Code", "s-1", incoming: true);
+        Speech.EnqueueText("Another session", "claude", "C:\\Other", "s-2", incoming: true);
+
+        await _h.HistoryCount(3);
+        var history = _h.History.Reverse().ToArray();
+        Assert.Equal("Pass the dispatcher in:", history[0].Text);
+        Assert.Equal("```csharp\nvar timer = new DispatcherTimer()\n{\n};\n```\nThen it ticks.", history[1].Text);
+        Assert.Equal("Then it ticks.", history[1].SpokenText);
+        Assert.Equal(history[0].GroupId, history[1].GroupId);
+        Assert.Equal(history[0].Band, history[1].Band);
+        Assert.NotEqual(history[0].GroupId, history[2].GroupId);
+    }
+
+    [Fact]
+    public async Task A_code_block_ending_a_reply_is_kept_once_the_reply_goes_quiet()
+    {
+        Speech.Enabled = false;
+        Speech.ReplyGap = TimeSpan.FromMilliseconds(200);
+
+        Speech.EnqueueText("Here it is:", "claude", incoming: true);
+        Speech.EnqueueText("```\ncode\n```", "claude", incoming: true);
+
+        await _h.HistoryCount(2);
+        var last = _h.History[0];
+        Assert.Equal("```\ncode\n```", last.Text);
+        Assert.Equal("", last.SpokenText);
+        Assert.Equal(_h.History[1].GroupId, last.GroupId);
     }
 
     [Fact]
@@ -143,12 +230,32 @@ public class SpeechEngineTests : IDisposable
     {
         Speech.Enabled = false;
 
-        Speech.EnqueueText("Ignored while off", "tester");
+        Speech.EnqueueText("Logged while off", "tester");
         Speech.Announce("Off");
         Speech.EnqueueRequested("Read this anyway", "clipboard");
 
+        await _h.HistoryCount(3);
+        Assert.Equal([("Logged while off.", QueueItemStatus.SpeechOff), ("Off.", QueueItemStatus.Done),
+                      ("Read this anyway.", QueueItemStatus.Done)],
+                     _h.History.Reverse().Select(i => (i.SpokenText, i.Status)));
+        Assert.Equal(2, _h.Player.Played.Count);
+    }
+
+    [Fact]
+    public async Task Play_again_synthesizes_a_message_that_arrived_while_speech_was_off()
+    {
+        Speech.Enabled = false;
+        Speech.EnqueueText("Hear me later", "tester");
+        await _h.HistoryCount(1);
+        Assert.Empty(_h.AudioFiles);
+
+        Speech.Requeue(_h.History[0]);
+
         await _h.HistoryCount(2);
-        Assert.Equal(["Off.", "Read this anyway."], _h.History.Reverse().Select(i => i.SpokenText));
+        var copy = _h.History[0];
+        Assert.Equal(QueueItemStatus.Done, copy.Status);
+        Assert.NotNull(copy.AudioFilePath);
+        Assert.Equal([copy.AudioFilePath], _h.Player.Played);
     }
 
     [Fact]
@@ -306,7 +413,7 @@ public class SpeechEngineTests : IDisposable
     public async Task History_survives_a_restart()
     {
         Speech.EnqueueText("First", "tester");
-        Speech.EnqueueText("**Second**", "claude");
+        Speech.EnqueueText("**Second**", "claude", "Herald", "abc-123");
         await _h.HistoryCount(2);
         var before = _h.History;
 
@@ -314,6 +421,7 @@ public class SpeechEngineTests : IDisposable
 
         Assert.Equal(before.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo, i.ShowAsMarkdown)),
                      _h.History.Select(i => (i.Id, i.Text, i.SpokenText, i.Sender, i.Status, i.AudioFilePath, i.SynthesisInfo, i.ShowAsMarkdown)));
+        Assert.Equal([("Herald", "abc-123"), (null, null)], _h.History.Select(i => (i.Session, i.SessionId)));
         // Claude's message is shown as Markdown, as its sender is set to; the other isn't.
         Assert.Equal([true, false], _h.History.Select(i => i.ShowAsMarkdown));
         // Neighbouring messages get opposite shading.
@@ -450,6 +558,81 @@ public class SpeechEngineTests : IDisposable
         Assert.Contains(voice.DisplayName, _h.History.Single(i => i.Sender == "swede").SynthesisInfo);
         Assert.Null(_h.History.Single(i => i.Sender == "tester").Language);
     }
+
+    [Fact]
+    public async Task Each_session_gets_the_first_free_voice_and_keeps_it()
+    {
+        var voices = _h.Engines.Windows.Voices;
+        Assert.SkipWhen(voices.Count < 2, "Needs two Windows voices to tell sessions apart");
+        _h.Senders.GetOrCreate("claude").Voices = [new SenderVoice("windows", voices[0].Id), new SenderVoice("windows", voices[1].Id)];
+
+        Speech.EnqueueText("One", "claude", "A", "id-1");
+        Speech.EnqueueText("Two", "claude", "B", "id-2");
+        // Every voice is taken: from the top again.
+        Speech.EnqueueText("Three", "claude", "C", "id-3");
+        Speech.EnqueueText("One again", "claude", "A", "id-1");
+
+        await _h.HistoryCount(4);
+        Assert.Equal([voices[0].DisplayName, voices[1].DisplayName, voices[0].DisplayName, voices[0].DisplayName],
+                     _h.History.Reverse().Select(i => VoiceNameIn(i.SynthesisInfo)));
+    }
+
+    [Fact]
+    public async Task Messages_without_a_session_count_as_one_session()
+    {
+        var voices = _h.Engines.Windows.Voices;
+        Assert.SkipWhen(voices.Count < 2, "Needs two Windows voices to tell them apart");
+        _h.Senders.GetOrCreate("claude").Voices = [new SenderVoice("windows", voices[0].Id), new SenderVoice("windows", voices[1].Id)];
+
+        Speech.EnqueueText("With a session", "claude", "A", "id-1");
+        Speech.EnqueueText("Plain", "claude");
+        Speech.EnqueueText("Plain again", "claude");
+
+        await _h.HistoryCount(3);
+        Assert.Equal([voices[0].DisplayName, voices[1].DisplayName, voices[1].DisplayName],
+                     _h.History.Reverse().Select(i => VoiceNameIn(i.SynthesisInfo)));
+    }
+
+    [Fact]
+    public async Task A_session_whose_voice_was_removed_picks_another_when_it_speaks_again()
+    {
+        var voices = _h.Engines.Windows.Voices;
+        Assert.SkipWhen(voices.Count < 2, "Needs two Windows voices to tell sessions apart");
+        var claude = _h.Senders.GetOrCreate("claude");
+        claude.Voices = [new SenderVoice("windows", voices[0].Id), new SenderVoice("windows", voices[1].Id)];
+        Speech.EnqueueText("One", "claude", "A", "id-1");
+        Speech.EnqueueText("Two", "claude", "B", "id-2");
+        await _h.HistoryCount(2);
+
+        claude.Voices = [new SenderVoice("windows", voices[0].Id)];
+        Speech.EnqueueText("Two again", "claude", "B", "id-2");
+        Speech.EnqueueText("One again", "claude", "A", "id-1");
+
+        await _h.HistoryCount(4);
+        Assert.Equal([voices[0].DisplayName, voices[0].DisplayName], _h.History.Take(2).Select(i => VoiceNameIn(i.SynthesisInfo)));
+    }
+
+    [Fact]
+    public async Task A_language_with_several_voices_is_shared_out_per_session_and_beats_the_senders_voices()
+    {
+        var voices = _h.Engines.Windows.Voices;
+        Assert.SkipWhen(voices.Count < 2, "Needs two Windows voices to tell sessions apart");
+        _h.Languages.Profiles[0].Enabled = true; // the Swedish example
+        var claude = _h.Senders.GetOrCreate("claude");
+        claude.Voices = [new SenderVoice("windows", voices[0].Id)];
+        claude.LanguageRules = [new LanguageVoiceRule("Swedish", "windows", voices[1].Id),
+                                new LanguageVoiceRule("Swedish", "windows", voices[0].Id)];
+        const string swedish = "Det är bra och jag tycker att det fungerar";
+
+        Speech.EnqueueText(swedish, "claude", "A", "id-1");
+        Speech.EnqueueText(swedish, "claude", "B", "id-2");
+
+        await _h.HistoryCount(2);
+        Assert.Equal([voices[1].DisplayName, voices[0].DisplayName], _h.History.Reverse().Select(i => VoiceNameIn(i.SynthesisInfo)));
+    }
+
+    private static string? VoiceNameIn(string? synthesisInfo) =>
+        synthesisInfo?.Split('\n').FirstOrDefault(l => l.StartsWith("Voice: "))?["Voice: ".Length..];
 
     [Fact]
     public async Task A_voice_rule_for_an_uninstalled_engine_falls_back_to_the_senders_voice()

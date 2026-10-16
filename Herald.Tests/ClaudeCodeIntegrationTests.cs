@@ -239,12 +239,13 @@ public class ClaudeHookScriptTests : IDisposable
                 CreateNoWindow = true
             };
             using var hook = System.Diagnostics.Process.Start(run)!;
-            await hook.StandardInput.WriteAsync("""{ "delta": "Hello from the hook" }""");
+            await hook.StandardInput.WriteAsync("""{ "delta": "Hello from the hook", "session_id": "abc-123", "cwd": "C:\\Code\\Herald" }""");
             hook.StandardInput.Close();
             await hook.WaitForExitAsync(TestContext.Current.CancellationToken);
 
             await _h.HistoryCount(1);
             Assert.Equal(("claude", "Hello from the hook."), (_h.History[0].Sender, _h.History[0].SpokenText));
+            Assert.Equal((@"C:\Code\Herald", "abc-123"), (_h.History[0].Session, _h.History[0].SessionId));
         }
         finally
         {

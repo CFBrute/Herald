@@ -48,6 +48,30 @@ public class HookServerTests : IDisposable
     }
 
     [Fact]
+    public async Task Speak_keeps_the_session_it_came_from()
+    {
+        await Command("""{ "type": "speak", "text": "From one of two", "sender": "claude", "session": "Herald", "sessionId": "abc-123" }""");
+        await Command("""{ "type": "speak", "text": "No session", "sender": "claude", "session": "  " }""");
+
+        await _h.HistoryCount(2);
+        Assert.Equal([("Herald", "abc-123"), (null, null)], _h.History.Reverse().Select(i => (i.Session, i.SessionId)));
+        // The badge shows the start of the ID; the folder name is in its tooltip.
+        Assert.Equal(["abc-", null], _h.History.Reverse().Select(i => i.SessionLabel));
+        Assert.Equal("Folder: Herald\nSession: abc-123", _h.History[1].SessionDetails);
+    }
+
+    [Fact]
+    public async Task Without_an_id_the_badge_is_the_last_folder_of_the_session()
+    {
+        await Command("""{ "type": "speak", "text": "Pathy", "sender": "claude", "session": "C:\\Code\\Shop\\src\\" }""");
+
+        await _h.HistoryCount(1);
+        Assert.Equal("src", _h.History[0].SessionLabel);
+        Assert.Equal(@"Folder: C:\Code\Shop\src\", _h.History[0].SessionDetails);
+        Assert.All(_h.History, i => Assert.Equal("claude", i.Sender));
+    }
+
+    [Fact]
     public async Task A_message_without_a_sender_is_filed_as_unknown()
     {
         await Command("""{ "type": "speak", "text": "Who am I" }""");

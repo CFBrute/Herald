@@ -20,11 +20,13 @@ public class SpeechEngine : ObservableObject, IDisposable
     private readonly LanguageProfileStore _languages;
     private readonly IAudioPlayer _player;
     private readonly AppLog? _log;
+    private readonly Chime? _chime;
 
     private readonly Queue<QueueItem> _pending = new();
     private readonly Lock _lock = new();
     private readonly SemaphoreSlim _signal = new(0);
     private readonly CancellationTokenSource _shutdownCts = new();
+    private readonly Timer _replyTimer;
 
     private volatile QueueItem? _currentItem;
     private volatile bool _skipRequested;
@@ -47,9 +49,11 @@ public class SpeechEngine : ObservableObject, IDisposable
     }
 
     public SpeechEngine(AppPaths paths, AppSettings settings, EngineRegistry engines, SenderSettingsStore senders,
-                        LanguageProfileStore languages, IAudioPlayer? player = null, AppLog? log = null)
+                        LanguageProfileStore languages, IAudioPlayer? player = null, AppLog? log = null,
+                        Chime? chime = null)
     {
         _log = log;
+        _chime = chime;
         _paths = paths;
         _settings = settings;
         _engines = engines;
@@ -69,6 +73,8 @@ public class SpeechEngine : ObservableObject, IDisposable
             Name = "SpeechEngineWorker"
         };
         worker.Start();
+
+        _replyTimer = new Timer(_ => EndQuietReplies(), null, 1000, 1000);
     }
 
     private void OnSettingChanged(object? sender, PropertyChangedEventArgs e)
@@ -153,7 +159,7 @@ public class SpeechEngine : ObservableObject, IDisposable
     private record HistoryItemDto(Guid Id, string Text, string Sender, DateTime EnqueuedAt, string? AudioFilePath,
                                   QueueItemStatus Status, Guid GroupId, int PartIndex, int PartCount, bool IsCopy,
                                   string? Language = null, string? SynthesisInfo = null, string? SpokenText = null,
-                                  bool ShowAsMarkdown = false);
+                                  bool ShowAsMarkdown = false, string? Session = null, string? SessionId = null);
 
     /// <summary>Restores History from the last session. Runs on the UI thread at startup.</summary>
     private void LoadHistory()
@@ -174,7 +180,9 @@ public class SpeechEngine : ObservableObject, IDisposable
                 IsCopy = dto.IsCopy,
                 Language = dto.Language,
                 SynthesisInfo = dto.SynthesisInfo,
-                ShowAsMarkdown = dto.ShowAsMarkdown
+                ShowAsMarkdown = dto.ShowAsMarkdown,
+                Session = dto.Session,
+                SessionId = dto.SessionId
             });
         }
 
@@ -222,7 +230,7 @@ public class SpeechEngine : ObservableObject, IDisposable
                            History.Select(i => new HistoryItemDto(i.Id, i.Text, i.Sender, i.EnqueuedAt, i.AudioFilePath,
                                                                   i.Status, i.GroupId, i.PartIndex, i.PartCount, i.IsCopy,
                                                                   i.Language, i.SynthesisInfo, i.SpokenText,
-                                                                  i.ShowAsMarkdown)).ToList(),
+                                                                  i.ShowAsMarkdown, i.Session, i.SessionId)).ToList(),
                            indented: false);
 
     /// <summary>Drops the oldest History items beyond the limit, deleting their audio.</summary>
@@ -263,16 +271,116 @@ public class SpeechEngine : ObservableObject, IDisposable
         });
     }
 
-    public void EnqueueText(string text, string sender)
+    /// <summary>
+    /// Queues a message to be spoken. While speech is off it only goes into History,
+    /// marked as not spoken; "Play again" synthesizes it then.
+    /// </summary>
+    /// <param name="session">Which of the sender's sessions it's from, shown as a badge; optional.</param>
+    /// <param name="sessionId">That session's unique ID; optional.</param>
+    /// <param name="incoming">
+    /// From another program: rings the chime (if it's on, and not for a muted sender) and is
+    /// treated as a possible block of a longer reply - see <see cref="ReplyGap"/>.
+    /// </param>
+    public void EnqueueText(string text, string sender, string? session = null, string? sessionId = null, bool incoming = false)
     {
-        if (!Enabled) return;
-        EnqueueInternal(text, sender, playWhenDisabled: false);
+        session = Trimmed(session);
+        sessionId = Trimmed(sessionId);
+        if (!incoming)
+        {
+            EnqueueInternal(text, sender, playWhenDisabled: false, session: session, sessionId: sessionId);
+            return;
+        }
+        if (String.IsNullOrWhiteSpace(text)) return;
+
+        string? complete;
+        Reply reply;
+        bool startsReply;
+        lock (_replies)
+        {
+            var key = $"{sender}\n{sessionId ?? session}";
+            var now = DateTime.UtcNow;
+            startsReply = !_replies.TryGetValue(key, out var existing) || now - existing.Last > ReplyGap;
+            reply = startsReply ? new Reply(sender, session, sessionId, Guid.NewGuid(), NextBand()) : existing!;
+            _replies[key] = reply;
+            reply.Last = now;
+            complete = reply.Add(text);
+        }
+
+        if (startsReply && !_senders.GetOrCreate(sender).Muted) _chime?.Ring();
+        if (complete != null) EnqueueBlock(reply, complete);
     }
+
+    /// <summary>
+    /// Claude Code sends a reply block by block (each paragraph, list item, even each piece of
+    /// a code block). Blocks from one session that arrive less than this apart are one message:
+    /// they share its shading and Skip message, and only the first rings the chime.
+    /// </summary>
+    public TimeSpan ReplyGap { get; set; } = TimeSpan.FromSeconds(5);
+
+    private readonly Dictionary<string, Reply> _replies = [];
+
+    /// <summary>A reply arriving block by block from one sender's session.</summary>
+    private sealed class Reply(string sender, string? session, string? sessionId, Guid groupId, int band)
+    {
+        public string Sender { get; } = sender;
+        public string? Session { get; } = session;
+        public string? SessionId { get; } = sessionId;
+        public Guid GroupId { get; } = groupId;
+        public int Band { get; } = band;
+        public DateTime Last { get; set; }
+
+        /// <summary>Held back: a code block that's still open, or a finished one with nothing to say yet.</summary>
+        public string? Held { get; set; }
+        private bool _codeOpen;
+
+        /// <summary>
+        /// The text to queue now, or null while it's held back: a code block is collected until
+        /// it closes (so it isn't spoken), then goes with the next block that has words in it.
+        /// </summary>
+        public string? Add(string text)
+        {
+            var combined = Held == null ? text : Held + "\n" + text;
+            var fences = text.Split('\n').Count(line => line.TrimStart().StartsWith("```", StringComparison.Ordinal));
+            if (fences % 2 == 1) _codeOpen = !_codeOpen;
+
+            if (_codeOpen || TextFilter.CodeBlock.Replace(combined, "").Trim().Length == 0)
+            {
+                Held = combined;
+                return null;
+            }
+
+            Held = null;
+            return combined;
+        }
+    }
+
+    private void EnqueueBlock(Reply reply, string text) =>
+        EnqueueInternal(text, reply.Sender, playWhenDisabled: false, session: reply.Session, sessionId: reply.SessionId,
+                        groupId: reply.GroupId, band: reply.Band);
+
+    /// <summary>Ends replies that went quiet, queueing whatever they still held back (e.g. a closing code block).</summary>
+    private void EndQuietReplies()
+    {
+        var ended = new List<Reply>();
+        lock (_replies)
+        {
+            var now = DateTime.UtcNow;
+            foreach (var (key, reply) in _replies.Where(r => now - r.Value.Last > ReplyGap).ToList())
+            {
+                _replies.Remove(key);
+                ended.Add(reply);
+            }
+        }
+
+        foreach (var reply in ended.Where(r => r.Held != null)) EnqueueBlock(reply, reply.Held!);
+    }
+
+    private static string? Trimmed(string? value) => String.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// Speaks a short "herald" system status message (e.g. "Activated"/"Off") even
     /// while Enabled is false - used for the toggle confirmation itself, since
-    /// EnqueueText would otherwise refuse to queue anything while speech is off.
+    /// EnqueueText only puts messages in History while speech is off.
     /// </summary>
     public void Announce(string text) => EnqueueInternal(text, "herald", playWhenDisabled: true);
 
@@ -282,12 +390,17 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     public void EnqueueRequested(string text, string sender) => EnqueueInternal(text, sender, playWhenDisabled: true);
 
-    private void EnqueueInternal(string text, string sender, bool playWhenDisabled, bool speedAnnouncement = false)
+    private void EnqueueInternal(string text, string sender, bool playWhenDisabled, bool speedAnnouncement = false,
+                                 string? session = null, string? sessionId = null, Guid? groupId = null, int? band = null)
     {
         if (String.IsNullOrWhiteSpace(text)) return;
 
         var settings = _senders.GetOrCreate(sender);
-        if (settings.Muted) return;
+        // Messages that won't be spoken still go into History (without audio), so they
+        // can be read there and played later on request.
+        QueueItemStatus? notSpoken = settings.Muted ? QueueItemStatus.Muted
+                                   : !Enabled && !playWhenDisabled ? QueueItemStatus.SpeechOff
+                                   : null;
 
         // Guards against absurd input only; long text is split into parts below.
         if (text.Length > TextFilter.MaxLength) text = text[..TextFilter.MaxLength];
@@ -297,9 +410,25 @@ public class SpeechEngine : ObservableObject, IDisposable
         var replacements = settings.ReplacementSnapshot;
         var parts = TextChunker.SplitMessage(text, t => TextFilter.Clean(t, filter, replacements),
                                              _settings.ChunkThreshold, _settings.ChunkTargetLength);
-        if (parts.Count == 0) return;
-        var groupId = Guid.NewGuid();
-        var band = NextBand();
+        if (parts.Count == 0)
+        {
+            // Nothing to say (a code block ending a reply): still shown, as part of its reply.
+            if (groupId is { } reply)
+            {
+                MoveToHistory(new QueueItem(text, sender, "")
+                {
+                    Status = QueueItemStatus.Done,
+                    ShowAsMarkdown = settings.ShowAsMarkdown,
+                    Session = session,
+                    SessionId = sessionId,
+                    GroupId = reply,
+                    Band = band ?? NextBand()
+                });
+            }
+            return;
+        }
+        var messageGroup = groupId ?? Guid.NewGuid();
+        var messageBand = band ?? NextBand();
         // Only look for the languages this sender has a voice rule for.
         var ruleLanguages = settings.LanguageRules.Select(r => r.LanguageName).ToHashSet();
         var profiles = _languages.Snapshot.Where(p => ruleLanguages.Contains(p.Name)).ToList();
@@ -313,12 +442,28 @@ public class SpeechEngine : ObservableObject, IDisposable
                 ShowAsMarkdown = settings.ShowAsMarkdown,
                 PlayWhenDisabled = playWhenDisabled,
                 IsSpeedAnnouncement = speedAnnouncement,
-                GroupId = groupId,
-                Band = band,
+                Session = session,
+                SessionId = sessionId,
+                GroupId = messageGroup,
+                Band = messageBand,
                 PartIndex = i + 1,
                 PartCount = parts.Count
             });
         }
+
+        if (notSpoken is { } status)
+        {
+            foreach (var item in items)
+            {
+                item.Status = status;
+                MoveToHistory(item);
+            }
+            return;
+        }
+
+        // Sessions take their voices in the order their messages arrive, not the order the
+        // parts get synthesized: the next part is prepared early, while the current one plays.
+        foreach (var item in items) VoiceFor(item, settings);
 
         Enqueue(items);
     }
@@ -422,11 +567,16 @@ public class SpeechEngine : ObservableObject, IDisposable
     /// </summary>
     public void Requeue(QueueItem source)
     {
+        // A code block on its own has nothing to say.
+        if (String.IsNullOrWhiteSpace(source.SpokenText)) return;
+
         var copy = new QueueItem(source.Text, source.Sender, source.SpokenText)
         {
             PlayWhenDisabled = true,
             IsCopy = true,
             ShowAsMarkdown = source.ShowAsMarkdown,
+            Session = source.Session,
+            SessionId = source.SessionId,
             Band = NextBand(),
             Language = source.Language,
             // The audio is reused, so the original voice and speed still apply.
@@ -581,19 +731,76 @@ public class SpeechEngine : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// The sender's rule for the detected language when its engine is ready; otherwise
-    /// the sender's default voice.
+    /// The sender's voices for the detected language when it has some whose engine is
+    /// ready; otherwise the sender's own voices. With several, each session gets its own.
     /// </summary>
     private (ITtsEngine Engine, string VoiceId) VoiceFor(QueueItem item, SenderSettings senderSettings)
     {
-        if (item.Language != null
-            && senderSettings.LanguageRules.FirstOrDefault(r => r.LanguageName == item.Language) is { } rule
-            && _engines.Find(rule.EngineId) is { IsReady: true })
+        if (item.Language != null)
         {
-            return _engines.Resolve(rule.EngineId, rule.VoiceId);
+            var languageVoices = senderSettings.LanguageRules
+                .Where(r => r.LanguageName == item.Language)
+                .Select(r => new SenderVoice(r.EngineId, r.VoiceId))
+                .Where(IsReady)
+                .ToList();
+            if (languageVoices.Count > 0)
+            {
+                var voice = SessionVoice(item.Sender, item.Language, item.SessionId, languageVoices);
+                return _engines.Resolve(voice.EngineId, voice.VoiceId);
+            }
         }
 
-        return _engines.Resolve(senderSettings.EngineId, senderSettings.VoiceId);
+        var voices = senderSettings.Voices.Where(IsReady).ToList();
+        if (voices.Count > 0)
+        {
+            var voice = SessionVoice(item.Sender, String.Empty, item.SessionId, voices);
+            return _engines.Resolve(voice.EngineId, voice.VoiceId);
+        }
+
+        // No voice whose engine is installed: Resolve falls back to Windows' default voice.
+        var wanted = senderSettings.Voices.FirstOrDefault();
+        return _engines.Resolve(wanted?.EngineId ?? SenderSettings.DefaultEngineId, wanted?.VoiceId ?? String.Empty);
+    }
+
+    private bool IsReady(SenderVoice voice) => _engines.Find(voice.EngineId) is { IsReady: true };
+
+    /// <summary>
+    /// Which voice a session speaks with, from one list of a sender's voices (its own, or
+    /// those for one language). Kept only while Herald runs, so after a restart sessions
+    /// pick afresh.
+    /// </summary>
+    private sealed class VoiceTurns
+    {
+        public Dictionary<string, SenderVoice> BySession { get; } = [];
+        public int Overflow { get; set; }
+    }
+
+    // Keyed by sender and list ("" for the sender's own voices, else the language).
+    private readonly Dictionary<(string Sender, string List), VoiceTurns> _voiceTurns = [];
+
+    // Messages without a session count as one session of their own, under this key.
+    private const string NoSession = "";
+
+    /// <summary>
+    /// A session keeps its voice while that voice is still in the list. A new session, or
+    /// one whose voice was removed, takes the first voice no other session has; when every
+    /// voice is taken, they're handed out again from the top.
+    /// </summary>
+    private SenderVoice SessionVoice(string sender, string list, string? sessionId, IReadOnlyList<SenderVoice> voices)
+    {
+        lock (_voiceTurns)
+        {
+            var key = (sender.ToLowerInvariant(), list);
+            if (!_voiceTurns.TryGetValue(key, out var turns)) _voiceTurns[key] = turns = new VoiceTurns();
+
+            var session = sessionId ?? NoSession;
+            if (turns.BySession.TryGetValue(session, out var kept) && voices.Contains(kept)) return kept;
+
+            var taken = turns.BySession.Where(p => p.Key != session).Select(p => p.Value).ToHashSet();
+            var voice = voices.FirstOrDefault(v => !taken.Contains(v)) ?? voices[turns.Overflow++ % voices.Count];
+            turns.BySession[session] = voice;
+            return voice;
+        }
     }
 
     /// <summary>
@@ -744,5 +951,7 @@ public class SpeechEngine : ObservableObject, IDisposable
         _shutdownCts.Cancel();
         _signal.Release();
         _player.Stop();
+        _replyTimer.Dispose();
+        _chime?.Dispose();
     }
 }

@@ -222,7 +222,8 @@ public class AppSettingsTests : IDisposable
 
         Assert.Equal(
             ["SpeedPercent", "ChunkThreshold", "ChunkTargetLength", "HistoryLimit", "AskToConnectClaude",
-             "ReadClipboardAutomatically", "TrayHintShown", "Theme", "Volume", "UiScalePercent", "HookPort"],
+             "ReadClipboardAutomatically", "TrayHintShown", "Theme", "Volume", "UiScalePercent", "HookPort",
+             "ChimeOnMessage", "ChimeVolume"],
             json.Select(p => p.Key));
         Assert.Equal("Light", (string?)json["Theme"]);
     }
