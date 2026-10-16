@@ -461,6 +461,10 @@ public class SpeechEngine : ObservableObject, IDisposable
             return;
         }
 
+        // Sessions take their voices in the order their messages arrive, not the order the
+        // parts get synthesized: the next part is prepared early, while the current one plays.
+        foreach (var item in items) VoiceFor(item, settings);
+
         Enqueue(items);
     }
 
