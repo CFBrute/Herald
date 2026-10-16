@@ -26,7 +26,6 @@ public partial class SettingsWindow : Window
 
     // Set while the pickers are filled from code, so their SelectionChanged handlers
     // don't write half-updated values back to the sender.
-    private bool _updatingPickers;
 
     public SettingsWindow(AppServices services, HotkeyManager hotkeyManager, Action exitHerald)
     {
@@ -77,6 +76,65 @@ public partial class SettingsWindow : Window
         SendersGrid.SelectedIndex = 0;
     }
 
+    // Per-sender voices: one for everything, or several that sessions take turns with
+
+    public record VoiceView(SenderVoice Voice, string Description);
+
+    private void LoadVoices()
+    {
+        VoicesList.ItemsSource = SelectedSender?.Voices
+            .Select((v, i) => new VoiceView(v, $"{i + 1}. {DescribeVoice(v.EngineId, v.VoiceId)}"))
+            .ToList();
+    }
+
+    private string DescribeVoice(string engineId, string voiceId)
+    {
+        var engine = _engines.Find(engineId);
+        var voice = engine?.Voices.FirstOrDefault(v => v.Id == voiceId)?.DisplayName
+                    ?? (voiceId.Length == 0 ? "default voice" : voiceId);
+        var text = $"{engine?.DisplayName ?? engineId} - {voice}";
+        return engine is { IsReady: false } ? text + "  (engine not installed, skipped)" : text;
+    }
+
+    private void VoiceAdd_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedSender is not { } senderSettings
+            || EngineCombo.SelectedItem is not ITtsEngine engine
+            || VoiceCombo.SelectedItem is not VoiceInfo voice) return;
+
+        var added = new SenderVoice(engine.Id, voice.Id);
+        if (!senderSettings.Voices.Contains(added)) senderSettings.Voices = [.. senderSettings.Voices, added];
+        LoadVoices();
+        UpdateEngineHint();
+    }
+
+    private void VoiceRemove_Click(object sender, RoutedEventArgs e)
+    {
+        if (SelectedSender is not { } senderSettings || sender is not FrameworkElement { Tag: VoiceView view }) return;
+
+        // A session that had this voice picks another the next time it speaks.
+        senderSettings.Voices = [.. senderSettings.Voices.Where(v => v != view.Voice)];
+        LoadVoices();
+        UpdateEngineHint();
+    }
+
+    private async void VoiceTest_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: VoiceView view } button) return;
+
+        var (engine, voiceId) = _engines.Resolve(view.Voice.EngineId, view.Voice.VoiceId);
+        var voice = engine.Voices.FirstOrDefault(v => v.Id == voiceId);
+        button.IsEnabled = false;
+        try
+        {
+            await _speech.PreviewAsync(engine, voiceId, SampleTextFor(voice?.Language ?? "en"));
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
     // Per-sender language rules ("if Swedish is detected, use this voice")
 
     public record LanguageRuleView(LanguageVoiceRule Rule, string Description);
@@ -92,6 +150,9 @@ public partial class SettingsWindow : Window
         var engine = _engines.Find(rule.EngineId);
         var voice = engine?.Voices.FirstOrDefault(v => v.Id == rule.VoiceId)?.DisplayName ?? rule.VoiceId;
         var text = $"If {rule.LanguageName}: {engine?.DisplayName ?? rule.EngineId} - {voice}";
+        // Several voices for one language: sessions take turns with them in this order.
+        var sameLanguage = SelectedSender?.LanguageRules.Where(r => r.LanguageName == rule.LanguageName).ToList() ?? [];
+        if (sameLanguage.Count > 1) text += $"  (session turn {sameLanguage.IndexOf(rule) + 1} of {sameLanguage.Count})";
 
         var profile = _languages.Profiles.FirstOrDefault(p => p.Name == rule.LanguageName);
         if (profile == null) return text + "  (no such language on the Languages tab)";
@@ -133,17 +194,15 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        // One rule per language: adding again replaces the old voice.
-        senderSettings.LanguageRules =
-        [
-            .. senderSettings.LanguageRules
-                .Where(r => r.LanguageName != language),
-
-            new LanguageVoiceRule(language, engine.Id, voice.Id)
-        ];
-        LanguageRuleHint.Text = "Languages and how they're detected are set up on the Languages tab.";
+        // A language can have several voices (sessions take turns with them), but not the same one twice.
+        var rule = new LanguageVoiceRule(language, engine.Id, voice.Id);
+        if (!senderSettings.LanguageRules.Contains(rule)) senderSettings.LanguageRules = [.. senderSettings.LanguageRules, rule];
+        LanguageRuleHint.Text = LanguageRuleHintText;
         LoadLanguageRules();
     }
+
+    private const string LanguageRuleHintText =
+        "Languages and how they're detected are set up on the Languages tab. Give a language several voices and sessions take turns with them, like with the voices above.";
 
     private void LanguageRuleRemove_Click(object sender, RoutedEventArgs e)
     {
@@ -209,61 +268,37 @@ public partial class SettingsWindow : Window
 
         var answer = MessageBox.Show(this,
             $"Put {selected.Sender}'s characters to strip, replacements and Markdown setting back to Herald's defaults?\n\n" +
-            "Its voice, language rules, Muted and Speak sender stay as they are.",
+            "Its voices, language rules, Muted and Speak sender stay as they are.",
             "Reset text rules", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer == MessageBoxResult.Yes) selected.ResetTextRules();
     }
 
     private void LoadVoicePickers()
     {
+        LoadVoices();
         LoadLanguageRules();
 
-        _updatingPickers = true;
-        try
-        {
-            var selected = SelectedSender;
-            if (selected == null)
-            {
-                EngineCombo.SelectedItem = null;
-                VoiceCombo.ItemsSource = null;
-                return;
-            }
-
-            var engine = _engines.Find(selected.EngineId) ?? _engines.Windows;
-            EngineCombo.SelectedItem = engine;
-            VoiceCombo.ItemsSource = engine.Voices;
-            VoiceCombo.SelectedItem = engine.Voices.FirstOrDefault(v => v.Id == selected.VoiceId)
-                                      ?? engine.Voices.FirstOrDefault(v => v.Id == engine.DefaultVoiceId);
-        }
-        finally
-        {
-            _updatingPickers = false;
-        }
-
+        // The pickers start at the sender's first voice, ready to add another from the same engine.
+        var first = SelectedSender?.Voices.FirstOrDefault();
+        EngineCombo.SelectedItem = (first != null ? _engines.Find(first.EngineId) : null) ?? _engines.Windows;
         UpdateEngineHint();
     }
 
     private void EngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_updatingPickers || SelectedSender is not { } selected || EngineCombo.SelectedItem is not ITtsEngine engine) return;
-
-        selected.EngineId = engine.Id;
-        selected.VoiceId = engine.DefaultVoiceId;
-        LoadVoicePickers();
-    }
-
-    private void VoiceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_updatingPickers || SelectedSender is not { } selected || VoiceCombo.SelectedItem is not VoiceInfo voice) return;
-
-        selected.VoiceId = voice.Id;
+        var engine = EngineCombo.SelectedItem as ITtsEngine;
+        VoiceCombo.ItemsSource = engine?.Voices;
+        VoiceCombo.SelectedItem = engine?.Voices.FirstOrDefault(v => v.Id == engine.DefaultVoiceId);
+        UpdateEngineHint();
     }
 
     private void UpdateEngineHint()
     {
         EngineHintText.Text = EngineCombo.SelectedItem is ITtsEngine { IsReady: false } engine
-            ? $"{engine.DisplayName} isn't installed yet, so the default Windows voice is used for now. See the Engines tab."
-            : String.Empty;
+            ? $"{engine.DisplayName} isn't installed yet, so its voices are skipped for now. See the Engines tab."
+            : SelectedSender is { Voices.Count: 0 }
+                ? "No voices yet, so Windows' default voice is used."
+                : String.Empty;
     }
 
     private async void TestVoiceButton_Click(object sender, RoutedEventArgs e)
@@ -319,6 +354,7 @@ public partial class SettingsWindow : Window
         PiperInstalledCombo.SelectedIndex = piper.Voices.Count > 0 ? 0 : -1;
 
         UpdateEngineHint();
+        LoadVoices();
         LoadLanguageRules();
     }
 
@@ -482,6 +518,8 @@ public partial class SettingsWindow : Window
     private void RefreshFiles_Click(object sender, RoutedEventArgs e) => RefreshFiles();
 
     private void HowTo_Click(object sender, RoutedEventArgs e) => new HowToWindow(_services) { Owner = this }.Show();
+
+    private void TestChime_Click(object sender, RoutedEventArgs e) => _services.Chime.Play();
 
     private void Cleanup_Click(object sender, RoutedEventArgs e)
     {

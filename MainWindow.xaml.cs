@@ -32,6 +32,7 @@ public partial class MainWindow : Window
         _services = services;
         _engine = services.Speech;
         DataContext = _engine;
+        ChimeBox.DataContext = services.Settings;
         ShowHookStatus();
         services.HookServer.StatusChanged += () => Dispatcher.BeginInvoke(ShowHookStatus);
         VersionText.Text = BuildInfo.Label;

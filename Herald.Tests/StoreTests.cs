@@ -30,7 +30,7 @@ public class SenderSettingsStoreTests : IDisposable
         var sender = new SenderSettingsStore(FilePath).GetOrCreate("build-bot");
 
         Assert.False(sender.Muted);
-        Assert.Equal(SenderSettings.DefaultEngineId, sender.EngineId);
+        Assert.Equal([new SenderVoice(SenderSettings.DefaultEngineId, "")], sender.Voices);
         Assert.Equal(SenderSettings.DefaultFilterCharacters, sender.FilterCharacters);
         Assert.Single(sender.Replacements);
     }
@@ -104,8 +104,7 @@ public class SenderSettingsStoreTests : IDisposable
         var claude = store.GetOrCreate("claude");
 
         claude.Muted = true;
-        claude.EngineId = "piper";
-        claude.VoiceId = "sv_SE-nst-medium";
+        claude.Voices = [new SenderVoice("piper", "sv_SE-nst-medium")];
         claude.AnnounceSender = true;
         claude.ShowAsMarkdown = false;
         claude.FilterCharacters = "*";
@@ -118,8 +117,7 @@ public class SenderSettingsStoreTests : IDisposable
         Assert.True(reloaded.Muted);
         Assert.True(reloaded.AnnounceSender);
         Assert.False(reloaded.ShowAsMarkdown);
-        Assert.Equal("piper", reloaded.EngineId);
-        Assert.Equal("sv_SE-nst-medium", reloaded.VoiceId);
+        Assert.Equal([new SenderVoice("piper", "sv_SE-nst-medium")], reloaded.Voices);
         Assert.Equal("*", reloaded.FilterCharacters);
         Assert.Contains(reloaded.Replacements, r => r is { Find: "TTS", Replace: "text to speech" });
         Assert.Equal([new LanguageVoiceRule("Swedish", "piper", "sv_SE-nst-medium")], reloaded.LanguageRules);
@@ -136,8 +134,7 @@ public class SenderSettingsStoreTests : IDisposable
         claude.Replacements.Add(new ReplacementRule("TTS", "text to speech"));
         claude.Muted = true;
         claude.AnnounceSender = true;
-        claude.EngineId = "piper";
-        claude.VoiceId = "sv_SE-nst-medium";
+        claude.Voices = [new SenderVoice("piper", "sv_SE-nst-medium")];
         claude.LanguageRules = [new LanguageVoiceRule("Swedish", "piper", "sv_SE-nst-medium")];
 
         claude.ResetTextRules();
@@ -149,8 +146,7 @@ public class SenderSettingsStoreTests : IDisposable
                      reloaded.Replacements.Select(r => (r.Find, r.Replace)));
         Assert.True(reloaded.Muted);
         Assert.True(reloaded.AnnounceSender);
-        Assert.Equal("piper", reloaded.EngineId);
-        Assert.Equal("sv_SE-nst-medium", reloaded.VoiceId);
+        Assert.Equal([new SenderVoice("piper", "sv_SE-nst-medium")], reloaded.Voices);
         Assert.Single(reloaded.LanguageRules);
     }
 
@@ -170,8 +166,7 @@ public class SenderSettingsStoreTests : IDisposable
 
         var claude = new SenderSettingsStore(FilePath).GetOrCreate("claude");
 
-        Assert.Equal("kokoro", claude.EngineId);
-        Assert.Equal("am_michael", claude.VoiceId);
+        Assert.Equal([new SenderVoice("kokoro", "am_michael")], claude.Voices);
         Assert.Equal("-", claude.FilterCharacters);
         Assert.True(claude.ShowAsMarkdown);
     }
@@ -190,10 +185,9 @@ public class SenderSettingsTests
     [Fact]
     public void Null_values_fall_back_to_defaults()
     {
-        var sender = new SenderSettings("x") { EngineId = null!, VoiceId = null!, FilterCharacters = null!, LanguageRules = null! };
+        var sender = new SenderSettings("x") { Voices = null!, FilterCharacters = null!, LanguageRules = null! };
 
-        Assert.Equal(SenderSettings.DefaultEngineId, sender.EngineId);
-        Assert.Equal(String.Empty, sender.VoiceId);
+        Assert.Empty(sender.Voices);
         Assert.Equal(String.Empty, sender.FilterCharacters);
         Assert.Empty(sender.LanguageRules);
     }

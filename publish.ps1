@@ -23,5 +23,19 @@ if ($cert) {
     "Not signed (no 'CN=Carlos Figueiredo' code-signing certificate in Cert:\CurrentUser\My)."
 }
 
+# Pack the exe as Herald_1_0_19.7z (the version stamped into the exe, dots as underscores),
+# for handing out. 7-Zip must be installed; the archive is replaced if it already exists.
+$version = ((Get-Item $exe).VersionInfo.ProductVersion -split '\+')[0]
+$archive = Join-Path $out ("Herald_{0}.7z" -f ($version -replace '\.', '_'))
+$sevenZip = Join-Path $env:ProgramFiles "7-Zip\7z.exe"
+if (Test-Path $sevenZip) {
+    if (Test-Path $archive) { Remove-Item $archive }
+    & $sevenZip a -mx=9 -bso0 -bsp0 $archive $exe
+    if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+    "Packed: $archive"
+} else {
+    "Not packed (7-Zip not found at $sevenZip)."
+}
+
 "`nPublished: $exe ({0:N1} MB)" -f ((Get-Item $exe).Length / 1MB)
 Get-ChildItem $out | Select-Object Name, @{ n = "Size"; e = { "{0:N0} KB" -f ($_.Length / 1KB) } } | Format-Table -AutoSize

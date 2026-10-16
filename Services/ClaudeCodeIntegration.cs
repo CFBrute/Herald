@@ -309,8 +309,8 @@ public class ClaudeCodeIntegration
         var endpointFile = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(_hookScriptPath)!)!, "endpoint.json");
         var script = $$"""
             # Herald hook for Claude Code (MessageDisplay). Written by Herald; changes are overwritten.
-            # Forwards each block of Claude's reply to Herald on 127.0.0.1, tagged "claude", at the
-            # port Herald says it listens on in endpoint.json ({{HookServer.DefaultPort}} if that can't be read).
+            # Forwards each block of Claude's reply to Herald on 127.0.0.1, tagged "claude" and the
+            # session it's from (the folder Claude works in and its session ID), at the port Herald says it listens on in endpoint.json ({{HookServer.DefaultPort}} if that can't be read).
             $ErrorActionPreference = "SilentlyContinue"
 
             $port = {{HookServer.DefaultPort}}
@@ -336,7 +336,7 @@ public class ClaudeCodeIntegration
                 if ($connect.Wait(500) -and $client.Connected) {
                     $stream = $client.GetStream()
                     $stream.ReadTimeout = 3000
-                    $json = ([ordered]@{ type = "speak"; text = $delta; sender = "claude" } | ConvertTo-Json -Compress) + "`n"
+                    $json = ([ordered]@{ type = "speak"; text = $delta; sender = "claude"; session = $hookInput.cwd; sessionId = $hookInput.session_id } | ConvertTo-Json -Compress) + "`n"
                     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
                     $stream.Write($bytes, 0, $bytes.Length)
                     (New-Object System.IO.StreamReader($stream)).ReadLine() | Out-Null

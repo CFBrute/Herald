@@ -12,5 +12,6 @@ public record AppServices(
     LanguageProfileStore Languages,
     HotkeySettingsStore Hotkeys,
     SpeechEngine Speech,
+    Chime Chime,
     HookServer HookServer,
     ClaudeCodeIntegration Claude);
